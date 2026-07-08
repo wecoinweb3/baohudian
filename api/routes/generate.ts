@@ -34,9 +34,15 @@ router.post('/canvas', async (req, res) => {
       baseURL: resolvedBaseUrl || undefined,
     });
 
-    const { prompt, messages = [] } = req.body;
+    const { prompt, messages = [], images = [] } = req.body;
     if (!prompt) {
       return res.status(400).json({ success: false, error: 'Prompt is required' });
+    }
+
+    let enhancedPrompt = prompt;
+    if (images.length > 0) {
+      const imageNames = images.map((img: { id: string; name: string }) => img.name).join('、');
+      enhancedPrompt = `用户已上传图片素材：${imageNames}。${prompt}。如果用户需要在画布上添加图片logo或其他图片元素，请在设计方案中添加type为"image"的元素。`;
     }
 
     const response = await openai.chat.completions.create({
@@ -51,12 +57,23 @@ router.post('/canvas', async (req, res) => {
           role: item.role === 'assistant' ? 'assistant' as const : 'user' as const,
           content: String(item.content || '').slice(0, 1000),
         })),
-        { role: 'user', content: prompt },
+        { role: 'user', content: enhancedPrompt },
       ],
     });
 
     const content = response.choices[0]?.message?.content || '';
     const parsed = extractJsonObject(content);
+    
+    if (images.length > 0 && parsed.draft && parsed.draft.elements) {
+      let imageIndex = 0;
+      parsed.draft.elements.forEach((element: { type: string; src?: string }) => {
+        if (element.type === 'image' && !element.src && imageIndex < images.length) {
+          element.src = images[imageIndex].src;
+          imageIndex++;
+        }
+      });
+    }
+    
     res.json({ success: true, draft: parsed.draft, reply: parsed.reply });
   } catch (error) {
     console.error('Canvas generation error:', error);

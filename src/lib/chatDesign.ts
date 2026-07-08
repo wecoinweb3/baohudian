@@ -24,6 +24,7 @@ export interface ConversationDraftElement {
   y?: number;
   width?: number;
   height?: number;
+  src?: string;
 }
 
 export interface ConversationDesignDraft {

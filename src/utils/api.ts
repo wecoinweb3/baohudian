@@ -70,7 +70,7 @@ export const api = {
       });
       return response.json();
     },
-    canvas: async (data: { prompt: string; messages?: Array<{ role: string; content: string }> }): Promise<{ success: boolean; draft?: ConversationDesignDraft; reply?: string; error?: string }> => {
+    canvas: async (data: { prompt: string; messages?: Array<{ role: string; content: string }>; images?: Array<{ id: string; name: string; src: string }> }): Promise<{ success: boolean; draft?: ConversationDesignDraft; reply?: string; error?: string }> => {
       const response = await fetch(`${BASE_URL}/generate/canvas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

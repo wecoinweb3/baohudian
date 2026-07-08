@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { ChevronDown, Clock3, Download, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
+import { ChevronDown, Clock3, Download, ImagePlus, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
 import { normalizeDraft, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
 import type { ConversationItem } from '../types';
 import { api } from '../utils/api';
@@ -54,6 +54,8 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [presetPrompts, setPresetPrompts] = useState<PresetPrompt[]>([]);
   const [showPresets, setShowPresets] = useState(false);
   const [zoomPresetImage, setZoomPresetImage] = useState<string | null>(null);
+  const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; name: string; src: string }>>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!showPresets) return;
@@ -127,6 +129,26 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
     };
   }, [input, isGenerating]);
 
+  const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setUploadedImages((prev) => [
+          ...prev,
+          { id: `img_${Date.now()}_${Math.random().toString(36).slice(2)}`, name: file.name, src: String(reader.result) },
+        ]);
+      };
+      reader.readAsDataURL(file);
+    });
+    event.target.value = '';
+  };
+
+  const removeUploadedImage = (id: string) => {
+    setUploadedImages((prev) => prev.filter((img) => img.id !== id));
+  };
+
   const handleSubmit = async () => {
     const content = input.trim();
     if (!content || isGenerating) return;
@@ -149,6 +171,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
       const result = await api.generate.canvas({
         prompt: content,
         messages: messages.map((message) => ({ role: message.role, content: message.content })),
+        images: uploadedImages,
       });
 
       if (!result.success || !result.draft) {
@@ -405,13 +428,30 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
           <div ref={composerRef} className="fixed bottom-0 left-3 right-3 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg md:static md:left-auto md:right-auto md:z-auto md:mx-0 md:shrink-0 md:p-4 md:pb-4">
             <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
-              <button
-                type="button"
-                onClick={() => setInput('')}
-                className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-              >
-                清空
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInput('')}
+                  className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                >
+                  清空
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                >
+                  <ImagePlus className="h-3 w-3" />添加logo
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="hidden"
+                />
+              </div>
               <div className="relative" data-presets-menu>
                 <button
                   type="button"
@@ -468,6 +508,23 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               </div>
             </div>
             <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。" className="h-14 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
+            {uploadedImages.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {uploadedImages.map((img) => (
+                  <div key={img.id} className="relative flex items-center gap-1 border border-slate-200 bg-slate-50 px-2 py-1">
+                    <img src={img.src} alt={img.name} className="h-8 w-8 rounded object-cover" />
+                    <span className="max-w-[120px] truncate text-xs text-slate-600">{img.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => removeUploadedImage(img.id)}
+                      className="ml-1 text-slate-400 transition hover:text-red-500"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <div className="mt-2 flex border-t border-slate-200 pt-2 sm:mt-3 sm:pt-3 sm:justify-end">
               <button type="button" onClick={handleSubmit} disabled={isGenerating} className="inline-flex w-full items-center justify-center gap-2 bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"><Send className="h-4 w-4" />{isGenerating ? '生成中...' : '发送'}</button>
             </div>
@@ -615,7 +672,7 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
   drawLine(originX - 45, originY + safeTop, originX - 45, originY + safeTop + safeHeight, `${draft.canvas.safeAreaHeight}CM`, true);
   drawLine(originX + canvasWidth + 70, originY, originX + canvasWidth + 70, originY + canvasHeight, `${draft.canvas.height}CM`, true);
 
-  draft.elements.forEach((item) => {
+  for (const item of draft.elements) {
     const x = originX + safeLeft + safeWidth * (item.x ?? 0);
     const y = originY + safeTop + safeHeight * (item.y ?? 0);
     const width = safeWidth * (item.width ?? 0.3);
@@ -632,17 +689,40 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
       ctx.fillText(item.text || '文字', x + width / 2, y + height / 2, width);
     }
     if (item.type === 'image') {
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillRect(x, y, width, height);
-      ctx.strokeStyle = '#94a3b8';
-      ctx.strokeRect(x, y, width, height);
-      ctx.fillStyle = '#64748b';
-      ctx.font = 'bold 26px Microsoft YaHei';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('图片区', x + width / 2, y + height / 2);
+      if (item.src) {
+        await new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, x, y, width, height);
+            resolve();
+          };
+          img.onerror = () => {
+            ctx.fillStyle = '#e2e8f0';
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = '#94a3b8';
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillStyle = '#64748b';
+            ctx.font = 'bold 26px Microsoft YaHei';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('图片区', x + width / 2, y + height / 2);
+            resolve();
+          };
+          img.src = item.src;
+        });
+      } else {
+        ctx.fillStyle = '#e2e8f0';
+        ctx.fillRect(x, y, width, height);
+        ctx.strokeStyle = '#94a3b8';
+        ctx.strokeRect(x, y, width, height);
+        ctx.fillStyle = '#64748b';
+        ctx.font = 'bold 26px Microsoft YaHei';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('图片区', x + width / 2, y + height / 2);
+      }
     }
-  });
+  }
 
   return canvas.toDataURL('image/png');
 }
