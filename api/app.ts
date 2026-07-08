@@ -9,6 +9,7 @@ import express, {
 } from 'express'
 import cors from 'cors'
 import path from 'path'
+import fs from 'fs'
 import { fileURLToPath } from 'url'
 import authRoutes from './routes/auth.js'
 import materialsRoutes from './routes/materials.js'
@@ -43,6 +44,11 @@ app.use('/api/preset-prompts', presetPromptsRoutes)
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 
+const distDir = path.join(__dirname, '../dist')
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir))
+}
+
 /**
  * health
  */
@@ -55,6 +61,15 @@ app.use(
     })
   },
 )
+
+/**
+ * SPA fallback for React Router
+ */
+if (fs.existsSync(distDir)) {
+  app.get('*', (req: Request, res: Response) => {
+    res.sendFile(path.join(distDir, 'index.html'))
+  })
+}
 
 /**
  * error handler middleware
