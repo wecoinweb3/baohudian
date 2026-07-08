@@ -48,8 +48,8 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <ShieldCheck className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">登录系统</h1>
-            <p className="mt-1 text-sm text-slate-500">管理员可进入首页与管理页，普通用户仅可使用首页。</p>
+            <h1 className="text-2xl font-bold text-slate-900">保护垫设计智能体</h1>
+            
           </div>
         </div>
 

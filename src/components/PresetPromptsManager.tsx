@@ -5,7 +5,6 @@ import { api } from '../utils/api';
 type Preset = {
   id: string;
   title: string;
-  description: string;
   prompt: string;
   thumbnailUrl: string;
   sortOrder: number;
@@ -16,7 +15,6 @@ type EditingPreset = Omit<Preset, 'sortOrder'> & { sortOrder: number; isNew?: bo
 const emptyPreset = (): EditingPreset => ({
   id: '',
   title: '',
-  description: '',
   prompt: '',
   thumbnailUrl: '',
   sortOrder: 99,
@@ -72,7 +70,6 @@ export default function PresetPromptsManager() {
       await api.presetPrompts.save({
         id: editing.isNew ? undefined : editing.id,
         title: editing.title,
-        description: editing.description,
         prompt: editing.prompt,
         thumbnailUrl: editing.thumbnailUrl,
         sortOrder: editing.sortOrder,
@@ -150,9 +147,6 @@ export default function PresetPromptsManager() {
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-semibold text-slate-800">{preset.title}</div>
-                    {preset.description && (
-                      <div className="mt-0.5 text-xs text-slate-400">{preset.description}</div>
-                    )}
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <button
@@ -240,17 +234,6 @@ export default function PresetPromptsManager() {
                   onChange={(e) => setEditing((cur) => cur && ({ ...cur, title: e.target.value }))}
                   className="w-full border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
                   placeholder="例如：促销红色款"
-                />
-              </div>
-
-              {/* 简介 */}
-              <div className="space-y-2">
-                <div className="text-sm font-semibold text-slate-700">简介描述</div>
-                <input
-                  value={editing.description}
-                  onChange={(e) => setEditing((cur) => cur && ({ ...cur, description: e.target.value }))}
-                  className="w-full border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
-                  placeholder="显示在模板卡片下方的一句话说明"
                 />
               </div>
 

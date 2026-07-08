@@ -124,11 +124,11 @@ export const api = {
     },
   },
   presetPrompts: {
-    list: async (): Promise<{ success: boolean; presets: Array<{ id: string; title: string; description: string; prompt: string; thumbnailUrl: string; sortOrder: number }>; error?: string }> => {
+    list: async (): Promise<{ success: boolean; presets: Array<{ id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number }>; error?: string }> => {
       const response = await fetch(`${BASE_URL}/preset-prompts`);
       return response.json();
     },
-    save: async (data: { id?: string; title: string; description: string; prompt: string; sortOrder?: number }): Promise<{ success: boolean; error?: string }> => {
+    save: async (data: { id?: string; title: string; prompt: string; thumbnailUrl?: string; sortOrder?: number }): Promise<{ success: boolean; error?: string }> => {
       const response = await fetch(`${BASE_URL}/preset-prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

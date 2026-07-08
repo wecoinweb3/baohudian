@@ -53,7 +53,6 @@ router.get('/', (req, res) => {
       presets: rows.map((row) => ({
         id: row.id,
         title: row.title,
-        description: row.description,
         prompt: row.prompt,
         thumbnailUrl: row.thumbnail_url,
         sortOrder: row.sort_order,
@@ -68,7 +67,7 @@ router.get('/', (req, res) => {
 // POST /api/preset-prompts — 新增或更新
 router.post('/', (req, res) => {
   try {
-    const { id, title, description, prompt, sortOrder } = req.body;
+    const { id, title, prompt, thumbnailUrl, sortOrder } = req.body;
     if (!title?.trim() || !prompt?.trim()) {
       return res.status(400).json({ success: false, error: 'title and prompt are required' });
     }
@@ -78,16 +77,16 @@ router.post('/', (req, res) => {
     if (id) {
       const existing = db.prepare('SELECT id FROM preset_prompts WHERE id = ?').get(id);
       if (existing) {
-        db.prepare('UPDATE preset_prompts SET title=?, description=?, prompt=?, sort_order=?, updated_at=? WHERE id=?')
-          .run(title.trim(), description?.trim() || '', prompt.trim(), sortOrder ?? 0, now, id);
+        db.prepare('UPDATE preset_prompts SET title=?, prompt=?, thumbnail_url=?, sort_order=?, updated_at=? WHERE id=?')
+          .run(title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, id);
       } else {
-        db.prepare('INSERT INTO preset_prompts (id, title, description, prompt, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-          .run(id, title.trim(), description?.trim() || '', prompt.trim(), sortOrder ?? 0, now, now);
+        db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
+          .run(id, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, now);
       }
     } else {
       const newId = `preset_${Date.now()}`;
-      db.prepare('INSERT INTO preset_prompts (id, title, description, prompt, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-        .run(newId, title.trim(), description?.trim() || '', prompt.trim(), sortOrder ?? 0, now, now);
+      db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
+        .run(newId, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, now);
     }
     db.close();
     res.json({ success: true });

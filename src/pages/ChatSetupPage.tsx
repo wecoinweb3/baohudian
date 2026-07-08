@@ -4,10 +4,10 @@ import { normalizeDraft, type ChatMessage, type ConversationDesignDraft } from '
 import type { ConversationItem } from '../types';
 import { api } from '../utils/api';
 
-type PresetPrompt = { id: string; title: string; description: string; prompt: string; thumbnailUrl: string; sortOrder: number };
+type PresetPrompt = { id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number };
 
 const initialMessages: ChatMessage[] = [
-  { id: 'welcome', role: 'assistant', content: '你好，我可以帮你通过对话快速配置保护垫画布、非留白区域以及标题、图片、色块等元素。你可以直接输入需求，也可以点击下方示例模板。' },
+  { id: 'welcome', role: 'assistant', content: '你好，我可以生成保护垫效果图。你可以直接输入描述，也可以基于示例模板进行修改。' },
 ];
 
 function getFriendlyAssistantError(input: string, error: Error) {
@@ -138,7 +138,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
       {
         id: thinkingMessageId,
         role: 'assistant',
-        content: '我正在整理你的需求并生成画布方案，请稍等一下…',
+        content: '我正在理解你的需求，请稍等…',
       },
     ];
     setMessages(nextUserAndThinkingMessages);
@@ -192,14 +192,12 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
       const result = await api.conversations.list();
       setHistoryItems(result.conversations || []);
 
-      const preferredId = targetConversationId ?? activeConversationId;
-      const targetConversation = preferredId
-        ? result.conversations.find((item) => item.id === preferredId)
-        : result.conversations[0];
-
-      if (targetConversation) {
-        setActiveConversationId(targetConversation.id);
-        setMessages((targetConversation.messages as ChatMessage[]).length > 0 ? (targetConversation.messages as ChatMessage[]) : initialMessages);
+      if (targetConversationId) {
+        const targetConversation = result.conversations.find((item) => item.id === targetConversationId);
+        if (targetConversation) {
+          setActiveConversationId(targetConversation.id);
+          setMessages((targetConversation.messages as ChatMessage[]).length > 0 ? (targetConversation.messages as ChatMessage[]) : initialMessages);
+        }
       }
     } finally {
       setIsLoadingHistory(false);
@@ -453,7 +451,6 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                           <div className="flex min-w-0 flex-1 flex-col justify-between">
                             <div>
                               <div className="text-xs font-semibold text-slate-800">{preset.title}</div>
-                              <div className="mt-0.5 text-xs leading-5 text-slate-400">{preset.description}</div>
                             </div>
                             <button
                               type="button"
@@ -470,7 +467,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 )}
               </div>
             </div>
-            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：120×70，白底，安全区域 84×40，放红色标题、底部横条和产品图。" className="h-14 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
+            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。" className="h-14 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
             <div className="mt-2 flex border-t border-slate-200 pt-2 sm:mt-3 sm:pt-3 sm:justify-end">
               <button type="button" onClick={handleSubmit} disabled={isGenerating} className="inline-flex w-full items-center justify-center gap-2 bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"><Send className="h-4 w-4" />{isGenerating ? '生成中...' : '发送'}</button>
             </div>
