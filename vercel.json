@@ -1,8 +1,17 @@
 {
+  "functions": {
+    "api/index.ts": {
+      "runtime": "@vercel/node@5.3.6"
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/index"
+    },
+    {
+      "source": "/uploads/(.*)",
+      "destination": "/uploads/$1"
     },
     {
       "source": "/(.*)",

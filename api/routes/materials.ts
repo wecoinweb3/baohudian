@@ -1,12 +1,15 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import multer from 'multer';
 
 const router = express.Router();
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-const dataDir = './data';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
+const dataDir = path.join(__dirname, '../data');
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
