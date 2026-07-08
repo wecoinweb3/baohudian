@@ -16,6 +16,34 @@ const CM_TO_CANVAS_SCALE = 10;
 
 const normalizeLegacyDimension = (value: number) => (value > 300 ? value / CM_TO_CANVAS_SCALE : value);
 
+const createDefaultProjectPayload = (): ProjectPayload => ({
+  name: '未命名项目',
+  width: DEFAULT_WIDTH,
+  height: DEFAULT_HEIGHT,
+  unit: 'cm',
+  backgroundColor: '#ffffff',
+  bleedlessWidth: DEFAULT_SAFE_WIDTH,
+  bleedlessHeight: DEFAULT_SAFE_HEIGHT,
+  canvasData: {
+    canvas: {
+      width: DEFAULT_WIDTH,
+      height: DEFAULT_HEIGHT,
+      unit: 'cm',
+      backgroundColor: '#ffffff',
+      safeArea: { width: DEFAULT_SAFE_WIDTH, height: DEFAULT_SAFE_HEIGHT },
+    },
+    elements: [],
+  },
+});
+
+const serializeProjectPayload = (payload: ProjectPayload) => JSON.stringify({
+  ...payload,
+  canvasData: {
+    ...payload.canvasData,
+    elements: [...payload.canvasData.elements].sort((a, b) => a.zIndex - b.zIndex),
+  },
+});
+
 const Workbench: React.FC = () => {
   const [projects, setProjects] = useState<DesignProject[]>([]);
   const [activeProject, setActiveProject] = useState<DesignProject | null>(null);
@@ -32,6 +60,8 @@ const Workbench: React.FC = () => {
   const [status, setStatus] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [dragState, setDragState] = useState<{ id: string; mode: 'move' | 'resize'; startX: number; startY: number; origin: DesignElement } | null>(null);
+  const [savedSnapshot, setSavedSnapshot] = useState(() => serializeProjectPayload(createDefaultProjectPayload()));
+  const [pendingAction, setPendingAction] = useState<{ type: 'open'; project: DesignProject } | { type: 'create' } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const renderCanvasWidth = canvasWidth * CM_TO_CANVAS_SCALE;
@@ -99,27 +129,53 @@ const Workbench: React.FC = () => {
 
   const resetEditor = (project?: DesignProject) => {
     if (!project) {
+      const defaultPayload = createDefaultProjectPayload();
       setActiveProject(null);
-      setProjectName('未命名项目');
-      setCanvasWidth(DEFAULT_WIDTH);
-      setCanvasHeight(DEFAULT_HEIGHT);
-      setBleedlessWidth(DEFAULT_SAFE_WIDTH);
-      setBleedlessHeight(DEFAULT_SAFE_HEIGHT);
-      setBackgroundColor('#ffffff');
+      setProjectName(defaultPayload.name);
+      setCanvasWidth(defaultPayload.width);
+      setCanvasHeight(defaultPayload.height);
+      setBleedlessWidth(defaultPayload.bleedlessWidth);
+      setBleedlessHeight(defaultPayload.bleedlessHeight);
+      setBackgroundColor(defaultPayload.backgroundColor);
       setElements([]);
       setSelectedId(null);
+      setSavedSnapshot(serializeProjectPayload(defaultPayload));
       return;
     }
 
+    const normalizedPayload: ProjectPayload = {
+      name: project.name,
+      width: normalizeLegacyDimension(project.width),
+      height: normalizeLegacyDimension(project.height),
+      unit: 'cm',
+      backgroundColor: project.backgroundColor,
+      bleedlessWidth: normalizeLegacyDimension(project.bleedlessWidth),
+      bleedlessHeight: normalizeLegacyDimension(project.bleedlessHeight),
+      canvasData: {
+        canvas: {
+          width: normalizeLegacyDimension(project.width),
+          height: normalizeLegacyDimension(project.height),
+          unit: 'cm',
+          backgroundColor: project.backgroundColor,
+          safeArea: {
+            width: normalizeLegacyDimension(project.bleedlessWidth),
+            height: normalizeLegacyDimension(project.bleedlessHeight),
+          },
+        },
+        elements: project.canvasData?.elements || [],
+      },
+    };
+
     setActiveProject(project);
-    setProjectName(project.name);
-    setCanvasWidth(normalizeLegacyDimension(project.width));
-    setCanvasHeight(normalizeLegacyDimension(project.height));
-    setBleedlessWidth(normalizeLegacyDimension(project.bleedlessWidth));
-    setBleedlessHeight(normalizeLegacyDimension(project.bleedlessHeight));
-    setBackgroundColor(project.backgroundColor);
-    setElements(project.canvasData?.elements || []);
+    setProjectName(normalizedPayload.name);
+    setCanvasWidth(normalizedPayload.width);
+    setCanvasHeight(normalizedPayload.height);
+    setBleedlessWidth(normalizedPayload.bleedlessWidth);
+    setBleedlessHeight(normalizedPayload.bleedlessHeight);
+    setBackgroundColor(normalizedPayload.backgroundColor);
+    setElements(normalizedPayload.canvasData.elements);
     setSelectedId(null);
+    setSavedSnapshot(serializeProjectPayload(normalizedPayload));
   };
 
   const buildPayload = (): ProjectPayload => ({
@@ -133,14 +189,7 @@ const Workbench: React.FC = () => {
     canvasData,
   });
 
-  const createProject = async () => {
-    const result = await api.projects.create(buildPayload());
-    if (result.success) {
-      resetEditor(result.project);
-      await loadProjects();
-      setStatus('新项目已创建');
-    }
-  };
+  const hasUnsavedChanges = () => serializeProjectPayload(buildPayload()) !== savedSnapshot;
 
   const saveProject = async () => {
     setIsSaving(true);
@@ -150,12 +199,61 @@ const Workbench: React.FC = () => {
         resetEditor(result.project);
         await loadProjects();
         setStatus(`已保存：${new Date().toLocaleTimeString()}`);
-      } else {
-        setStatus(result.error || '保存失败');
+        return true;
       }
+      setStatus(result.error || '保存失败');
+      return false;
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const openProject = (project: DesignProject) => {
+    if (hasUnsavedChanges()) {
+      setPendingAction({ type: 'open', project });
+      return;
+    }
+    resetEditor(project);
+  };
+
+  const createProject = async () => {
+    if (hasUnsavedChanges()) {
+      setPendingAction({ type: 'create' });
+      return;
+    }
+
+    await createBlankProject();
+  };
+
+  const createBlankProject = async () => {
+    const defaultPayload = createDefaultProjectPayload();
+
+    resetEditor();
+    const result = await api.projects.create(defaultPayload);
+    if (result.success) {
+      resetEditor(result.project);
+      await loadProjects();
+      setStatus('新项目已创建');
+    }
+  };
+
+  const continuePendingAction = async () => {
+    if (!pendingAction) return;
+    const action = pendingAction;
+    setPendingAction(null);
+
+    if (action.type === 'open') {
+      resetEditor(action.project);
+      return;
+    }
+
+    await createBlankProject();
+  };
+
+  const saveAndContinuePendingAction = async () => {
+    const saved = await saveProject();
+    if (!saved) return;
+    await continuePendingAction();
   };
 
   const deleteProject = async (id: string) => {
@@ -287,10 +385,6 @@ const Workbench: React.FC = () => {
     ctx.strokeStyle = '#666666';
     ctx.lineWidth = 2;
     ctx.strokeRect(originX, originY, renderCanvasWidth, renderCanvasHeight);
-    ctx.setLineDash([10, 8]);
-    ctx.strokeStyle = '#3b82f6';
-    ctx.strokeRect(safeX, safeY, renderBleedlessWidth, renderBleedlessHeight);
-    ctx.setLineDash([]);
 
     drawDimensionLine(originX, originY - 70, originX + renderCanvasWidth, originY - 70, `${canvasWidth}CM`, 'horizontal');
     drawDimensionLine(originX + renderCanvasWidth + 70, originY, originX + renderCanvasWidth + 70, originY + renderCanvasHeight, `${canvasHeight}CM`, 'vertical');
@@ -330,10 +424,54 @@ const Workbench: React.FC = () => {
   };
 
   return (
-    <div className="h-full flex bg-slate-100 text-slate-800">
-      <aside className={`${sidebarCollapsed ? 'w-20' : 'w-80'} border-r border-slate-200 bg-white flex flex-col transition-all duration-200`}>
+    <div className="h-full flex flex-col overflow-auto bg-slate-100 text-slate-800 lg:flex-row lg:overflow-hidden">
+      {pendingAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-slate-900/10">
+            <div className="border-b border-slate-100 px-6 py-5">
+              <div className="flex items-start gap-4">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                  <Save className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-900">当前项目有未保存修改</h3>
+                  <p className="mt-1 text-sm leading-6 text-slate-500">
+                    {pendingAction.type === 'open' ? '切换到其他项目之前，建议先保存当前编辑内容。' : '新建项目之前，建议先保存当前编辑内容。'}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse gap-3 bg-slate-50 px-6 py-4 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingAction(null)}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={continuePendingAction}
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+              >
+                不保存继续
+              </button>
+              <button
+                type="button"
+                onClick={saveAndContinuePendingAction}
+                disabled={isSaving}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Save className="h-4 w-4" />
+                {isSaving ? '保存中...' : '保存并继续'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <aside className={`${sidebarCollapsed ? 'lg:w-20' : 'lg:w-80'} flex max-h-72 w-full flex-col border-b border-slate-200 bg-white transition-all duration-200 lg:max-h-none lg:border-b-0 lg:border-r`}>
         <div className={`border-b border-slate-100 ${sidebarCollapsed ? 'p-3' : 'p-4'}`}>
-          <div className={`flex ${sidebarCollapsed ? 'flex-col gap-3 items-center' : 'items-center gap-2'}`}>
+          <div className={`flex ${sidebarCollapsed ? 'gap-3 items-center lg:flex-col' : 'items-center gap-2'}`}>
             <button
               onClick={() => setSidebarCollapsed((value) => !value)}
               className="inline-flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700"
@@ -354,14 +492,14 @@ const Workbench: React.FC = () => {
             sidebarCollapsed ? (
               <button
                 key={project.id}
-                onClick={() => resetEditor(project)}
+                onClick={() => openProject(project)}
                 title={project.name}
                 className={`flex h-12 w-full items-center justify-center rounded-xl border transition ${activeProject?.id === project.id ? 'border-blue-500 bg-blue-50 text-blue-600' : 'border-slate-200 text-slate-500 hover:border-blue-300 hover:text-blue-600'}`}
               >
                 <span className="text-base font-semibold">{project.name.trim().charAt(0) || '项'}</span>
               </button>
             ) : (
-              <div key={project.id} className={`rounded-xl border p-3 cursor-pointer transition ${activeProject?.id === project.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`} onClick={() => resetEditor(project)}>
+              <div key={project.id} className={`rounded-xl border p-3 cursor-pointer transition ${activeProject?.id === project.id ? 'border-blue-500 bg-blue-50' : 'border-slate-200 hover:border-blue-300'}`} onClick={() => openProject(project)}>
                 <div className="flex items-start justify-between gap-2">
                   <div>
                     <div className="font-medium text-slate-800">{project.name}</div>
@@ -377,14 +515,14 @@ const Workbench: React.FC = () => {
         </div>
       </aside>
 
-      <section className="flex-1 min-w-0 flex flex-col">
-        <header className="h-16 bg-white border-b border-slate-200 px-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+      <section className="flex-none min-w-0 flex flex-col overflow-visible lg:flex-1 lg:overflow-hidden">
+        <header className="bg-white border-b border-slate-200 px-4 py-3 flex flex-col gap-3 lg:h-16 lg:flex-row lg:items-center lg:justify-between lg:py-0">
+          <div className="flex min-w-0 items-center gap-3">
             <FileImage className="w-5 h-5 text-blue-600" />
-            <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className="w-64 rounded-lg border border-slate-200 px-3 py-2 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            <input value={projectName} onChange={(e) => setProjectName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-200 px-3 py-2 font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500 lg:w-64 lg:flex-none" />
             <span className="text-xs text-slate-400">{status}</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 lg:overflow-visible lg:pb-0">
             <button className="toolbar-btn" onClick={() => setScale((v) => Math.max(0.3, Number((v - 0.1).toFixed(2))))}>缩小</button>
             <select
               value={String(scale)}
@@ -403,8 +541,8 @@ const Workbench: React.FC = () => {
           </div>
         </header>
 
-        <div className="flex-1 min-h-0 flex">
-          <div className="w-16 bg-white border-r border-slate-200 flex flex-col items-center py-4 gap-3">
+        <div className="flex-none min-h-0 flex flex-col lg:flex-1 lg:flex-row">
+          <div className="flex w-full items-center gap-3 overflow-x-auto border-b border-slate-200 bg-white px-4 py-3 lg:w-16 lg:flex-col lg:border-b-0 lg:border-r lg:px-0 lg:py-4">
             <button title="选择" className="tool-btn"><MousePointer2 className="w-5 h-5" /></button>
             <button title="文字" className="tool-btn" onClick={addText}><Type className="w-5 h-5" /></button>
             <button title="图片" className="tool-btn" onClick={() => fileInputRef.current?.click()}><ImagePlus className="w-5 h-5" /></button>
@@ -412,10 +550,10 @@ const Workbench: React.FC = () => {
             <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
           </div>
 
-          <main className="flex-1 min-h-0 flex flex-col bg-slate-100">
-            <div className="shrink-0 border-b border-slate-200 bg-slate-100 px-8 py-3">
+          <main className="flex-none min-h-[560px] flex flex-col bg-slate-100 lg:flex-1 lg:min-h-0">
+            <div className="shrink-0 border-b border-slate-200 bg-slate-100 px-4 py-3 lg:px-8">
               <div className="mx-auto w-fit">
-                <div className="grid grid-cols-1 gap-3 xl:grid-cols-5">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <InlineField label="画布宽 CM" value={canvasWidth} onChange={setCanvasWidth} />
                   <InlineField label="画布高 CM" value={canvasHeight} onChange={setCanvasHeight} />
                   <InlineField label="非留白宽 CM" value={bleedlessWidth} onChange={setBleedlessWidth} />
@@ -428,7 +566,7 @@ const Workbench: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex-1 overflow-auto p-8">
+            <div className="min-h-[360px] flex-1 overflow-auto p-4 lg:min-h-0 lg:p-8">
               <div className="mx-auto w-fit space-y-6">
                 <div>
                   <div className="relative mb-6" style={{ width: previewTotalWidth, height: 62 }}>
@@ -474,7 +612,7 @@ const Workbench: React.FC = () => {
             </div>
           </main>
 
-          <aside className="w-80 bg-white border-l border-slate-200 overflow-auto p-4 space-y-5">
+          <aside className="max-h-80 w-full overflow-auto border-t border-slate-200 bg-white p-4 space-y-5 lg:max-h-none lg:w-80 lg:border-l lg:border-t-0">
             <Panel title="元素属性">
               {!selectedElement && <div className="text-sm text-slate-400">请选择画布上的文字、图片或色块。</div>}
               {selectedElement && (
