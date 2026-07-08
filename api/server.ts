@@ -1,6 +1,7 @@
 /**
  * local server entry file, for local development
  */
+import './env.js';
 import app from './app.js';
 
 /**

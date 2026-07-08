@@ -55,7 +55,7 @@ const Workbench: React.FC = () => {
   const [backgroundColor, setBackgroundColor] = useState('#ffffff');
   const [elements, setElements] = useState<DesignElement[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [scale, setScale] = useState(0.7);
+  const [scale, setScale] = useState(0.5);
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -77,7 +77,8 @@ const Workbench: React.FC = () => {
   const sideDimensionTickLeft = SIDE_DIMENSION_LINE_X - SIDE_DIMENSION_TICK_WIDTH / 2;
 
   useEffect(() => {
-    loadProjects();
+    const params = new URLSearchParams(window.location.search);
+    void loadProjects(params.get('projectId') || undefined);
   }, []);
 
   useEffect(() => {
@@ -122,9 +123,34 @@ const Workbench: React.FC = () => {
     elements: [...elements].sort((a, b) => a.zIndex - b.zIndex),
   }), [backgroundColor, bleedlessHeight, bleedlessWidth, canvasHeight, canvasWidth, elements]);
 
-  const loadProjects = async () => {
+  const loadProjects = async (preferredProjectId?: string) => {
     const data = await api.projects.list();
-    setProjects(data.projects || []);
+    const nextProjects = data.projects || [];
+    setProjects(nextProjects);
+
+    if (nextProjects.length === 0) {
+      if (activeProject) {
+        resetEditor();
+      }
+      return;
+    }
+
+    const preferredProject = preferredProjectId
+      ? nextProjects.find((project) => project.id === preferredProjectId)
+      : null;
+
+    if (preferredProject) {
+      resetEditor(preferredProject);
+      return;
+    }
+
+    const matchedActiveProject = activeProject
+      ? nextProjects.find((project) => project.id === activeProject.id)
+      : null;
+
+    if (!matchedActiveProject) {
+      resetEditor(nextProjects[0]);
+    }
   };
 
   const resetEditor = (project?: DesignProject) => {

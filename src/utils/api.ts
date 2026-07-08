@@ -1,4 +1,5 @@
 import type { MaterialItem, PromptItem, GenerateRequest, GenerateResponse, DesignProject, ProjectPayload } from '../types';
+import type { ConversationDesignDraft } from '../lib/chatDesign';
 
 const BASE_URL = '/api';
 
@@ -49,6 +50,14 @@ export const api = {
   generate: {
     image: async (data: GenerateRequest): Promise<GenerateResponse> => {
       const response = await fetch(`${BASE_URL}/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    canvas: async (data: { prompt: string; messages?: Array<{ role: string; content: string }> }): Promise<{ success: boolean; draft?: ConversationDesignDraft; reply?: string; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/generate/canvas`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
