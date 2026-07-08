@@ -1,16 +1,11 @@
 import express from 'express';
 import Database from 'better-sqlite3';
-import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
+import { getDbPath } from '../lib/dbPath.js';
 
 const router = express.Router();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dataDir = path.join(__dirname, '../data');
-const dbPath = path.join(dataDir, 'design-projects.sqlite');
-
+const dbPath = getDbPath();
 const getDb = () => new Database(dbPath);
 
 interface PresetPromptRow {

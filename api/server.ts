@@ -7,7 +7,7 @@ import app from './app.js';
 /**
  * start server with port
  */
-const PORT = 3001;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;
 
 const server = app.listen(PORT, () => {
   console.log(`Server ready on port ${PORT}`);

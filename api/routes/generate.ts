@@ -1,15 +1,13 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { getAiSettings } from '../lib/aiSettings.js';
+import { getUploadDir } from '../lib/dbPath.js';
 import { OpenAI } from 'openai';
 
 const router = express.Router();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
+const uploadDir = getUploadDir();
 
 const extractJsonObject = (content: string) => {
   const fenced = content.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];

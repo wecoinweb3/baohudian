@@ -1,13 +1,11 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { getDataDir } from '../lib/dbPath.js';
 
 const router = express.Router();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const dataDir = path.join(__dirname, '../data');
+const dataDir = getDataDir();
 
 interface PromptItem {
   id: string;

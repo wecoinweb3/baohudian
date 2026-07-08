@@ -1,15 +1,13 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
 import multer from 'multer';
+import { getDataDir, getUploadDir } from '../lib/dbPath.js';
 
 const router = express.Router();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const uploadDir = process.env.UPLOAD_DIR || path.join(__dirname, '../../uploads');
-const dataDir = path.join(__dirname, '../data');
+const uploadDir = getUploadDir();
+const dataDir = getDataDir();
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

@@ -11,6 +11,7 @@ import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
+import { getUploadDir } from './lib/dbPath.js'
 import authRoutes from './routes/auth.js'
 import materialsRoutes from './routes/materials.js'
 import promptsRoutes from './routes/prompts.js'
@@ -42,7 +43,7 @@ app.use('/api/settings', settingsRoutes)
 app.use('/api/conversations', conversationsRoutes)
 app.use('/api/preset-prompts', presetPromptsRoutes)
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
+app.use('/uploads', express.static(getUploadDir()))
 
 const distDir = path.join(__dirname, '../dist')
 if (fs.existsSync(distDir)) {
