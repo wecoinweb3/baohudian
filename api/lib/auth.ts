@@ -39,32 +39,30 @@ const ensureUsersTable = () => {
     );
   `);
 
-  const countRow = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
-  if (countRow.count === 0) {
-    const now = new Date().toISOString();
-    const insert = db.prepare(`
-      INSERT INTO users (id, username, password, role, display_name, created_at)
-      VALUES (@id, @username, @password, @role, @display_name, @created_at)
-    `);
+  const now = new Date().toISOString();
+  const upsert = db.prepare(`
+    INSERT INTO users (id, username, password, role, display_name, created_at)
+    VALUES (@id, @username, @password, @role, @display_name, @created_at)
+    ON CONFLICT(id) DO UPDATE SET password = excluded.password
+  `);
 
-    insert.run({
-      id: 'user_admin',
-      username: 'admin',
-      password: 'Admin@123',
-      role: 'admin',
-      display_name: '系统管理员',
-      created_at: now,
-    });
+  upsert.run({
+    id: 'user_admin',
+    username: 'admin',
+    password: '123456',
+    role: 'admin',
+    display_name: '系统管理员',
+    created_at: now,
+  });
 
-    insert.run({
-      id: 'user_normal',
-      username: 'user',
-      password: 'User@123',
-      role: 'user',
-      display_name: '普通用户',
-      created_at: now,
-    });
-  }
+  upsert.run({
+    id: 'user_normal',
+    username: 'user',
+    password: '123456',
+    role: 'user',
+    display_name: '普通用户',
+    created_at: now,
+  });
 };
 
 ensureUsersTable();

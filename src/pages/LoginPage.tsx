@@ -71,11 +71,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
           {message && <div className="border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">{message}</div>}
         </div>
 
-        <div className="mt-6 space-y-3 border-t border-slate-200 pt-5 text-sm text-slate-600">
-          <div className="flex items-center gap-2 font-semibold text-slate-800"><UserCircle2 className="h-4 w-4" /> 预置测试账号</div>
-          <div>管理员：<span className="font-mono">admin / Admin@123</span></div>
-          <div>普通用户：<span className="font-mono">user / User@123</span></div>
-        </div>
+        
       </div>
     </div>
   );
