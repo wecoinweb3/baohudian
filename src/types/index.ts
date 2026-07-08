@@ -97,3 +97,33 @@ export interface ProjectPayload {
   canvasData?: CanvasData;
   thumbnail?: string;
 }
+
+export interface AISettings {
+  canvasApiKey: string;
+  canvasBaseUrl: string;
+  canvasModel: string;
+  canvasTemperature: number;
+  canvasSystemPrompt: string;
+}
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: 'admin' | 'user';
+  displayName: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  role: 'assistant' | 'user' | 'system';
+  content: string;
+  imageUrl?: string;
+}
+
+export interface ConversationItem {
+  id: string;
+  title: string;
+  messages: ConversationMessage[];
+  createdAt: string;
+  updatedAt: string;
+}

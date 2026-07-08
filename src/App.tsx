@@ -1,54 +1,27 @@
 import { useEffect, useState } from 'react';
-import { ChevronsLeft, ChevronsRight, LayoutDashboard, Plus, Settings } from 'lucide-react';
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { ChevronsLeft, ChevronsRight, LogOut, Plus, Settings } from 'lucide-react';
+import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import ChatSetupPage from './pages/ChatSetupPage';
-import Workbench from './pages/Workbench';
 import Admin from './pages/Admin';
+import LoginPage from './pages/LoginPage';
+import { api } from './utils/api';
+import type { AuthUser } from './types';
 
-type DesignerTab = {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-};
-
-const designerTabs: DesignerTab[] = [
-  { to: '/workbench', label: '工作台', icon: LayoutDashboard },
-  { to: '/admin', label: '管理端', icon: Settings },
-];
-
-function DesignerLayout({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
-
+function DesignerLayout({ children, currentUser, onLogout }: { children: React.ReactNode; currentUser: AuthUser; onLogout: () => void }) {
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <header className="bg-white border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-lg">P</span>
-            </div>
-            <div>
-              <h1 className="text-lg font-bold text-gray-800 sm:text-xl">保护垫在线设计器</h1>
-            </div>
-          </div>
+          <Link to="/" className="text-lg font-bold text-gray-800 transition hover:text-blue-600 sm:text-xl">保护垫在线设计器</Link>
 
-          <div className="flex w-full items-center overflow-x-auto rounded-lg bg-gray-100 p-1 sm:w-auto">
-            {designerTabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = location.pathname.startsWith(tab.to);
-              return (
-                <NavLink
-                  key={tab.to}
-                  to={tab.to}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-all ${
-                    isActive ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  {tab.label}
-                </NavLink>
-              );
-            })}
+          <div className="flex w-full items-center justify-end gap-3 sm:w-auto">
+            <div className="hidden text-right sm:block">
+              <div className="text-sm font-semibold text-slate-800">{currentUser.displayName}</div>
+              <div className="text-xs text-slate-500">{currentUser.role === 'admin' ? '管理员' : '普通用户'}</div>
+            </div>
+            <button type="button" onClick={onLogout} className="inline-flex items-center gap-2 border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+              <LogOut className="h-4 w-4" />退出登录
+            </button>
           </div>
         </div>
       </header>
@@ -58,7 +31,7 @@ function DesignerLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ChatEntryLayout() {
+function ChatEntryLayout({ currentUser, onLogout }: { currentUser: AuthUser; onLogout: () => void }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [newChatSignal, setNewChatSignal] = useState(0);
 
@@ -83,7 +56,7 @@ function ChatEntryLayout() {
   return (
     <div className="flex h-[var(--app-viewport-height,100dvh)] flex-col overflow-hidden bg-slate-50">
       <header className="shrink-0 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -98,14 +71,24 @@ function ChatEntryLayout() {
               <h1 className="text-lg font-semibold text-slate-900 sm:text-xl">保护垫智能设计助手</h1>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setNewChatSignal((value) => value + 1)}
-            className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-          >
-            <Plus className="h-4 w-4" />
-            新建
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {currentUser.role === 'admin' && (
+              <NavLink to="/admin" className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+                <Settings className="h-4 w-4" />管理端
+              </NavLink>
+            )}
+            <button
+              type="button"
+              onClick={() => setNewChatSignal((value) => value + 1)}
+              className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+            >
+              <Plus className="h-4 w-4" />
+              新建
+            </button>
+            <button type="button" onClick={onLogout} className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
+              <LogOut className="h-4 w-4" />退出
+            </button>
+          </div>
         </div>
       </header>
 
@@ -120,12 +103,40 @@ function ChatEntryLayout() {
   );
 }
 
+function ProtectedRoute({ currentUser, allowRoles, children }: { currentUser: AuthUser | null; allowRoles: Array<'admin' | 'user'>; children: JSX.Element }) {
+  if (!currentUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!allowRoles.includes(currentUser.role)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    const savedUser = localStorage.getItem('auth_user');
+    return savedUser ? JSON.parse(savedUser) as AuthUser : null;
+  });
+
+  const handleLogin = (user: AuthUser) => {
+    localStorage.setItem('auth_user', JSON.stringify(user));
+    setCurrentUser(user);
+  };
+
+  const handleLogout = async () => {
+    await api.auth.logout();
+    localStorage.removeItem('auth_user');
+    setCurrentUser(null);
+  };
+
   return (
     <Routes>
-      <Route path="/" element={<ChatEntryLayout />} />
-      <Route path="/workbench" element={<DesignerLayout><Workbench /></DesignerLayout>} />
-      <Route path="/admin" element={<DesignerLayout><Admin /></DesignerLayout>} />
+      <Route path="/login" element={currentUser ? <Navigate to="/" replace /> : <LoginPage onLogin={handleLogin} />} />
+      <Route path="/" element={<ProtectedRoute currentUser={currentUser} allowRoles={['admin', 'user']}><ChatEntryLayout currentUser={currentUser as AuthUser} onLogout={handleLogout} /></ProtectedRoute>} />
+      <Route path="/admin" element={<ProtectedRoute currentUser={currentUser} allowRoles={['admin']}><DesignerLayout currentUser={currentUser as AuthUser} onLogout={handleLogout}><Admin /></DesignerLayout></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

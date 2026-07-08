@@ -1,9 +1,23 @@
-import type { MaterialItem, PromptItem, GenerateRequest, GenerateResponse, DesignProject, ProjectPayload } from '../types';
+import type { MaterialItem, PromptItem, GenerateRequest, GenerateResponse, DesignProject, ProjectPayload, AISettings, AuthUser, ConversationItem, ConversationMessage } from '../types';
 import type { ConversationDesignDraft } from '../lib/chatDesign';
 
 const BASE_URL = '/api';
 
 export const api = {
+  auth: {
+    login: async (data: { username: string; password: string }): Promise<{ success: boolean; user?: AuthUser; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    logout: async (): Promise<{ success: boolean }> => {
+      const response = await fetch(`${BASE_URL}/auth/logout`, { method: 'POST' });
+      return response.json();
+    },
+  },
   materials: {
     get: async (): Promise<{ patterns: MaterialItem[]; spaces: MaterialItem[] }> => {
       const response = await fetch(`${BASE_URL}/materials`);
@@ -92,6 +106,50 @@ export const api = {
     },
     delete: async (id: string): Promise<{ success: boolean }> => {
       const response = await fetch(`${BASE_URL}/projects/${id}`, { method: 'DELETE' });
+      return response.json();
+    },
+  },
+  settings: {
+    get: async (): Promise<{ success: boolean; settings: AISettings; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/settings`);
+      return response.json();
+    },
+    save: async (data: AISettings): Promise<{ success: boolean; settings: AISettings; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+  },
+  conversations: {
+    list: async (): Promise<{ conversations: ConversationItem[] }> => {
+      const response = await fetch(`${BASE_URL}/conversations`);
+      return response.json();
+    },
+    get: async (id: string): Promise<{ conversation: ConversationItem }> => {
+      const response = await fetch(`${BASE_URL}/conversations/${id}`);
+      return response.json();
+    },
+    create: async (data: { title: string; messages: ConversationMessage[] }): Promise<{ success: boolean; conversation: ConversationItem; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/conversations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    update: async (id: string, data: { title: string; messages: ConversationMessage[] }): Promise<{ success: boolean; conversation: ConversationItem; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/conversations/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    delete: async (id: string): Promise<{ success: boolean; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/conversations/${id}`, { method: 'DELETE' });
       return response.json();
     },
   },

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Clock3, LoaderCircle, Send } from 'lucide-react';
-import { buildDraftFromPrompt, normalizeDraft, PRESET_PROMPTS, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
+import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { Clock3, Download, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
+import { normalizeDraft, PRESET_PROMPTS, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
+import type { ConversationItem } from '../types';
 import { api } from '../utils/api';
 
-const initialDraft = buildDraftFromPrompt('');
 const initialMessages: ChatMessage[] = [
   { id: 'welcome', role: 'assistant', content: '你好，我可以帮你通过对话快速配置保护垫画布、非留白区域以及标题、图片、色块等元素。你可以直接输入需求，也可以点击下方高频模板。' },
 ];
@@ -35,35 +35,90 @@ type ChatSetupPageProps = {
 
 export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, newChatSignal }: ChatSetupPageProps) {
   const [input, setInput] = useState('');
-  const [draft, setDraft] = useState<ConversationDesignDraft>(initialDraft);
+  const messagesScrollRef = useRef<HTMLDivElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  const previewTouchDistanceRef = useRef(0);
+  const previewTouchScaleRef = useRef(1);
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [historyItems, setHistoryItems] = useState<ConversationItem[]>([]);
+  const [pendingDeleteHistory, setPendingDeleteHistory] = useState<ConversationItem | null>(null);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+  const [previewRotation, setPreviewRotation] = useState(0);
+  const [composerHeight, setComposerHeight] = useState(188);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
     setInput('');
-    setDraft(initialDraft);
+    setActiveConversationId(null);
     setMessages(initialMessages);
   }, [newChatSignal]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    void loadConversationHistory();
+  }, []);
+
+  useEffect(() => {
+    const scrollContainer = messagesScrollRef.current;
+    if (!scrollContainer) return;
+
+    scrollContainer.scrollTo({
+      top: scrollContainer.scrollHeight,
+      behavior: 'smooth',
+    });
   }, [messages, isGenerating]);
+
+  useEffect(() => {
+    const composer = composerRef.current;
+    if (!composer) return;
+
+    const updateComposerHeight = () => {
+      setComposerHeight(composer.getBoundingClientRect().height);
+    };
+
+    updateComposerHeight();
+
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', updateComposerHeight);
+      return () => window.removeEventListener('resize', updateComposerHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(() => updateComposerHeight());
+    resizeObserver.observe(composer);
+    window.addEventListener('resize', updateComposerHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', updateComposerHeight);
+    };
+  }, [input, isGenerating]);
+
+  const mobileLayoutStyle = {
+    '--mobile-composer-offset': `${composerHeight + 8}px`,
+  } as CSSProperties;
+
+  const mobileMessageCardStyle = {
+    height: `calc(100% - ${composerHeight + 8}px)`,
+  } as CSSProperties;
 
   const handleSubmit = async () => {
     const content = input.trim();
     if (!content || isGenerating) return;
     const thinkingMessageId = `assistant_thinking_${Date.now()}`;
     const userMessage: ChatMessage = { id: `user_${Date.now()}`, role: 'user', content };
-    setMessages((current) => [
-      ...current,
+    const nextUserAndThinkingMessages: ChatMessage[] = [
+      ...messages,
       userMessage,
       {
         id: thinkingMessageId,
         role: 'assistant',
         content: '我正在整理你的需求并生成画布方案，请稍等一下…',
       },
-    ]);
+    ];
+    setMessages(nextUserAndThinkingMessages);
     setInput('');
     setIsGenerating(true);
 
@@ -79,30 +134,152 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
       const nextDraft = normalizeDraft(result.draft);
       const imageUrl = await renderDraftToPng(nextDraft);
-      setDraft(nextDraft);
-      setMessages((current) => [
-        ...current.filter((message) => message.id !== thinkingMessageId),
+      const nextMessages = [
+        ...nextUserAndThinkingMessages.filter((message) => message.id !== thinkingMessageId),
         {
           id: `assistant_${Date.now()}`,
-          role: 'assistant',
+          role: 'assistant' as const,
           content: result.reply || '已生成图片，请查看。',
           imageUrl,
         },
-      ]);
+      ];
+      setMessages(nextMessages);
+      await persistConversation(content, nextMessages);
     } catch (error) {
       const friendlyMessage = getFriendlyAssistantError(content, error as Error);
-      setMessages((current) => [
-        ...current.filter((message) => message.id !== thinkingMessageId),
-        { id: `assistant_error_${Date.now()}`, role: 'assistant', content: friendlyMessage },
-      ]);
+      const nextMessages = [
+        ...nextUserAndThinkingMessages.filter((message) => message.id !== thinkingMessageId),
+        { id: `assistant_error_${Date.now()}`, role: 'assistant' as const, content: friendlyMessage },
+      ];
+      setMessages(nextMessages);
+      await persistConversation(content, nextMessages);
     } finally {
       setIsGenerating(false);
     }
   };
 
+  const buildConversationTitle = (content: string) => {
+    const normalized = content.trim().replace(/\s+/g, ' ');
+    return normalized.slice(0, 18) || '未命名对话';
+  };
+
+  const loadConversationHistory = async (targetConversationId?: string | null) => {
+    setIsLoadingHistory(true);
+    try {
+      const result = await api.conversations.list();
+      setHistoryItems(result.conversations || []);
+
+      const preferredId = targetConversationId ?? activeConversationId;
+      const targetConversation = preferredId
+        ? result.conversations.find((item) => item.id === preferredId)
+        : result.conversations[0];
+
+      if (targetConversation) {
+        setActiveConversationId(targetConversation.id);
+        setMessages((targetConversation.messages as ChatMessage[]).length > 0 ? (targetConversation.messages as ChatMessage[]) : initialMessages);
+      }
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  const persistConversation = async (content: string, nextMessages: ChatMessage[]) => {
+    const title = buildConversationTitle(content);
+    const payload = {
+      title,
+      messages: nextMessages.map((message) => ({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        imageUrl: message.imageUrl,
+      })),
+    };
+
+    const result = activeConversationId
+      ? await api.conversations.update(activeConversationId, payload)
+      : await api.conversations.create(payload);
+
+    if (!result.success) {
+      throw new Error(result.error || '保存对话失败');
+    }
+
+    setActiveConversationId(result.conversation.id);
+    await loadConversationHistory(result.conversation.id);
+  };
+
+  const handleSelectConversation = async (conversationId: string) => {
+    const result = await api.conversations.get(conversationId);
+    setActiveConversationId(result.conversation.id);
+    setMessages((result.conversation.messages as ChatMessage[]).length > 0 ? (result.conversation.messages as ChatMessage[]) : initialMessages);
+  };
+
+  const handleDeleteConversation = async () => {
+    if (!pendingDeleteHistory) return;
+    await api.conversations.delete(pendingDeleteHistory.id);
+    const isDeletingActiveConversation = pendingDeleteHistory.id === activeConversationId;
+    setPendingDeleteHistory(null);
+    if (isDeletingActiveConversation) {
+      setActiveConversationId(null);
+      setMessages(initialMessages);
+    }
+    await loadConversationHistory(isDeletingActiveConversation ? null : activeConversationId);
+  };
+
+  const handleDownloadImage = (imageUrl: string, filename: string) => {
+    const link = document.createElement('a');
+    link.href = imageUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const resetPreviewState = () => {
+    previewTouchDistanceRef.current = 0;
+    previewTouchScaleRef.current = 1;
+    setPreviewScale(1);
+    setPreviewRotation(0);
+    setPreviewImageUrl(null);
+  };
+
+  const handleRotatePreview = () => {
+    setPreviewRotation((current) => (current + 90) % 360);
+  };
+
+  const getTouchDistance = (touches: React.TouchList) => {
+    if (touches.length < 2) return 0;
+    const [firstTouch, secondTouch] = [touches[0], touches[1]];
+    const deltaX = secondTouch.clientX - firstTouch.clientX;
+    const deltaY = secondTouch.clientY - firstTouch.clientY;
+    return Math.hypot(deltaX, deltaY);
+  };
+
+  const handlePreviewTouchStart = (event: React.TouchEvent<HTMLImageElement>) => {
+    if (event.touches.length < 2) return;
+    const distance = getTouchDistance(event.touches);
+    if (!distance) return;
+    previewTouchDistanceRef.current = distance;
+    previewTouchScaleRef.current = previewScale;
+  };
+
+  const handlePreviewTouchMove = (event: React.TouchEvent<HTMLImageElement>) => {
+    if (event.touches.length < 2 || !previewTouchDistanceRef.current) return;
+    event.preventDefault();
+    const nextDistance = getTouchDistance(event.touches);
+    if (!nextDistance) return;
+    const rawScale = previewTouchScaleRef.current * (nextDistance / previewTouchDistanceRef.current);
+    const clampedScale = Math.min(4, Math.max(1, rawScale));
+    setPreviewScale(clampedScale);
+  };
+
+  const handlePreviewTouchEnd = () => {
+    previewTouchDistanceRef.current = 0;
+    previewTouchScaleRef.current = previewScale;
+  };
+
   return (
     <div
-      className="relative mx-auto flex h-[calc(var(--app-viewport-height,100dvh)-88px)] w-full max-w-none gap-3 px-0 pt-3 sm:h-full sm:px-4 sm:pb-3 lg:gap-4"
+      className="relative mx-auto flex min-h-[calc(var(--app-viewport-height,100dvh)-88px)] w-full max-w-none gap-3 px-0 pt-3 sm:h-full sm:min-h-0 sm:px-4 sm:pb-3 lg:gap-4"
     >
       {!sidebarCollapsed && (
         <button
@@ -114,7 +291,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
       )}
 
       <aside
-        className={`z-30 min-h-0 shrink-0 flex-col border border-slate-200 bg-white p-2 shadow-sm transition-all ${
+        className={`z-50 min-h-0 shrink-0 flex-col border border-slate-200 bg-white p-2 shadow-sm transition-all ${
           sidebarCollapsed
             ? 'hidden'
             : 'fixed left-3 top-[88px] flex h-[calc(100vh-100px)] w-[280px] max-w-[calc(100vw-24px)] lg:relative lg:left-auto lg:top-auto lg:h-full'
@@ -126,48 +303,82 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               <Clock3 className="h-4 w-4 text-blue-500" /> 历史对话
             </div>
             <div className="mt-3 flex min-h-0 flex-1 flex-col gap-2 overflow-auto pr-1">
-              {[
-                '促销款保护垫草稿',
-                '品牌展示款布局',
-                '单品主推保护垫',
-              ].map((title, index) => (
-                <button
-                  key={title}
-                  type="button"
-                  className={`px-3 py-3 text-left text-sm transition ${index === 0 ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
-                >
-                  <div className="truncate font-medium">{title}</div>
-                  <div className="mt-1 text-xs text-slate-400">本地草稿 · 示例</div>
-                </button>
-              ))}
+              {historyItems.length === 0 ? (
+                <div className="px-3 py-6 text-center text-sm text-slate-400">{isLoadingHistory ? '正在加载历史记录...' : '暂无历史记录'}</div>
+              ) : (
+                historyItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-start gap-2 px-3 py-3 text-sm transition ${item.id === activeConversationId ? 'bg-blue-50 text-blue-700' : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'}`}
+                  >
+                    <button type="button" onClick={() => void handleSelectConversation(item.id)} className="min-w-0 flex-1 text-left">
+                      <div className="truncate font-medium">{item.title}</div>
+                      <div className="mt-1 text-xs text-slate-400">{new Date(item.updatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPendingDeleteHistory(item)}
+                      className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center text-slate-400 transition hover:bg-white hover:text-red-500"
+                      aria-label={`删除${item.title}`}
+                      title="删除历史记录"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))
+              )}
             </div>
           </>
         )}
       </aside>
 
-      <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-        <div className="flex min-h-0 flex-1 flex-col border border-slate-200 bg-white p-3 shadow-sm sm:p-6">
-          <div className="min-h-0 flex-1 space-y-4 overflow-auto px-3 pb-[180px] pr-3 sm:px-0 sm:pb-4 sm:pr-1">
-            {messages.map((message) => (
-              <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[86%] px-4 py-3 text-sm leading-7 ${message.role === 'user' ? 'bg-blue-600 text-white' : 'border border-slate-200 bg-slate-50 text-slate-700'}`}>
-                  {message.id.startsWith('assistant_thinking_') && (
-                    <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-600">
-                      <LoaderCircle className="h-4 w-4 animate-spin" />
-                      AI 思考中
+      <section style={mobileLayoutStyle} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sm:h-full sm:pb-0">
+        <div className="flex min-h-0 h-full flex-col gap-2 sm:flex-1 sm:gap-4">
+          <div style={mobileMessageCardStyle} className="min-h-0 border border-slate-200 bg-white p-3 shadow-sm sm:h-auto sm:flex-1 sm:p-6">
+            <div ref={messagesScrollRef} className="h-full overflow-y-auto px-3 pb-3 pr-3 sm:px-0 sm:pb-4 sm:pr-1">
+              <div className="space-y-4">
+                {messages.map((message) => (
+                  <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[86%] px-4 py-3 text-sm leading-7 ${message.role === 'user' ? 'bg-blue-600 text-white' : 'border border-slate-200 bg-slate-50 text-slate-700'}`}>
+                      {message.id.startsWith('assistant_thinking_') && (
+                        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-blue-600">
+                          <LoaderCircle className="h-4 w-4 animate-spin" />
+                          AI 思考中
+                        </div>
+                      )}
+                      {message.content}
+                      {message.imageUrl && (
+                        <div className="mt-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewScale(1);
+                              setPreviewRotation(0);
+                              setPreviewImageUrl(message.imageUrl ?? null);
+                            }}
+                            className="block w-full text-left"
+                            title="点击放大查看"
+                          >
+                            <img src={message.imageUrl} alt="生成的保护垫画布" className="w-full max-w-[520px] cursor-zoom-in border border-slate-200 bg-white transition hover:opacity-95" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadImage(message.imageUrl as string, `protective-pad-design-${message.id}.png`)}
+                            className="mt-3 inline-flex items-center gap-2 border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                          >
+                            <Download className="h-4 w-4" />下载图片
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  {message.content}
-                  {message.imageUrl && (
-                    <img src={message.imageUrl} alt="生成的保护垫画布" className="mt-3 w-full max-w-[520px] border border-slate-200 bg-white" />
-                  )}
-                </div>
+                  </div>
+                ))}
+                <div ref={messagesEndRef} />
               </div>
-            ))}
-            <div ref={messagesEndRef} />
+            </div>
           </div>
 
-          <div className="fixed left-3 right-3 bottom-0 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg sm:static sm:left-auto sm:right-auto sm:z-auto sm:mx-0 sm:shrink-0 sm:p-3 sm:pb-3">
+          <div ref={composerRef} className="fixed bottom-0 left-3 right-3 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg md:static md:left-auto md:right-auto md:z-auto md:mx-0 md:shrink-0 md:p-4 md:pb-4">
             <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
               <button
                 type="button"
@@ -192,11 +403,68 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
         </div>
       </section>
 
-      <aside className="hidden h-full min-h-0 w-[360px] shrink-0 space-y-4 overflow-auto xl:block">
-        <div className="border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-          <GeneratedCanvas draft={draft} />
+      {pendingDeleteHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-md border border-slate-200 bg-white p-5 shadow-xl sm:p-6">
+            <div className="text-lg font-semibold text-slate-900">确认删除这条历史对话吗？</div>
+            <p className="mt-3 text-sm leading-6 text-slate-600">
+              删除后，这条历史记录将从当前列表中移除，操作后无法恢复。<br />
+              <span className="mt-2 inline-block font-medium text-slate-800">“{pendingDeleteHistory.title}”</span>
+            </p>
+            <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteHistory(null)}
+                className="border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+              >
+                先保留
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteConversation()}
+                className="bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+              >
+                确认删除
+              </button>
+            </div>
+          </div>
         </div>
-      </aside>
+      )}
+
+      {previewImageUrl && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4" onClick={resetPreviewState}>
+          <div className="relative max-h-full max-w-6xl" onClick={(event) => event.stopPropagation()}>
+            <div className="absolute left-2 top-2 z-10 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRotatePreview}
+                className="inline-flex h-10 w-10 items-center justify-center bg-black/60 text-white transition hover:bg-black/80"
+                aria-label="顺时针旋转图片"
+                title="旋转图片"
+              >
+                <RotateCw className="h-5 w-5" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={resetPreviewState}
+              className="absolute right-2 top-2 inline-flex h-10 w-10 items-center justify-center bg-black/60 text-white transition hover:bg-black/80"
+              aria-label="关闭图片预览"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={previewImageUrl}
+              alt="放大预览的保护垫画布"
+              onTouchStart={handlePreviewTouchStart}
+              onTouchMove={handlePreviewTouchMove}
+              onTouchEnd={handlePreviewTouchEnd}
+              className="max-h-[90vh] max-w-[90vw] border border-slate-700 bg-white object-contain shadow-2xl"
+              style={{ transform: `scale(${previewScale}) rotate(${previewRotation}deg)`, transformOrigin: 'center center', touchAction: 'none' }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -281,97 +549,4 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
   });
 
   return canvas.toDataURL('image/png');
-}
-
-function GeneratedCanvas({ draft }: { draft: ConversationDesignDraft }) {
-  const canvasWidth = 560;
-  const canvasHeight = canvasWidth * (draft.canvas.height / draft.canvas.width);
-  const safeWidth = canvasWidth * (draft.canvas.safeAreaWidth / draft.canvas.width);
-  const safeHeight = canvasHeight * (draft.canvas.safeAreaHeight / draft.canvas.height);
-  const safeLeft = (canvasWidth - safeWidth) / 2;
-  const safeTop = (canvasHeight - safeHeight) / 2;
-  const topMeasureHeight = 58;
-  const leftMeasureWidth = 58;
-  const rightMeasureWidth = 46;
-  const bottomPadding = 22;
-  const totalWidth = leftMeasureWidth + canvasWidth + rightMeasureWidth;
-  const totalHeight = topMeasureHeight + canvasHeight + bottomPadding;
-
-  return (
-    <div className="overflow-auto">
-      <div className="mx-auto w-fit min-w-full border border-slate-200 bg-white p-4">
-        <div className="relative origin-top-left" style={{ width: totalWidth, height: totalHeight }}>
-          <DimensionLine
-            direction="horizontal"
-            left={leftMeasureWidth}
-            top={8}
-            length={canvasWidth}
-            label={`${draft.canvas.width}CM`}
-          />
-          <DimensionLine
-            direction="horizontal"
-            left={leftMeasureWidth + safeLeft}
-            top={35}
-            length={safeWidth}
-            label={`${draft.canvas.safeAreaWidth}CM`}
-          />
-          <DimensionLine
-            direction="vertical"
-            left={18}
-            top={topMeasureHeight + safeTop}
-            length={safeHeight}
-            label={`${draft.canvas.safeAreaHeight}CM`}
-          />
-          <DimensionLine
-            direction="vertical"
-            left={leftMeasureWidth + canvasWidth + 28}
-            top={topMeasureHeight}
-            length={canvasHeight}
-            label={`${draft.canvas.height}CM`}
-          />
-
-          <div
-            className="absolute overflow-hidden border border-slate-500 shadow-sm"
-            style={{
-              left: leftMeasureWidth,
-              top: topMeasureHeight,
-              width: canvasWidth,
-              height: canvasHeight,
-              backgroundColor: draft.canvas.backgroundColor,
-            }}
-          >
-          <div className="absolute border border-slate-400/60" style={{ left: safeLeft, top: safeTop, width: safeWidth, height: safeHeight }} />
-          {draft.elements.map((item, index) => (
-            <div key={`${item.type}_${index}`} className="absolute overflow-hidden" style={{ left: safeLeft + safeWidth * (item.x ?? 0), top: safeTop + safeHeight * (item.y ?? 0), width: safeWidth * (item.width ?? 0.3), height: safeHeight * (item.height ?? 0.12), background: item.type === 'rect' ? item.color || '#ef0000' : item.type === 'image' ? '#e2e8f0' : 'transparent', border: item.type === 'image' ? '1px dashed #94a3b8' : 'none' }}>
-              {item.type === 'text' && <div className="flex h-full items-center justify-center px-2 text-center text-xl font-black leading-tight" style={{ color: item.color || '#111111' }}>{item.text || '标题'}</div>}
-              {item.type === 'image' && <div className="flex h-full items-center justify-center text-sm font-semibold text-slate-500">图片区</div>}
-            </div>
-          ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DimensionLine({ direction, left, top, length, label }: { direction: 'horizontal' | 'vertical'; left: number; top: number; length: number; label: string }) {
-  if (direction === 'horizontal') {
-    return (
-      <div className="absolute text-slate-950" style={{ left, top, width: length, height: 26 }}>
-        <div className="absolute left-0 right-0 top-3 border-t border-slate-500" />
-        <div className="absolute left-0 top-0 h-6 border-l border-slate-500" />
-        <div className="absolute right-0 top-0 h-6 border-l border-slate-500" />
-        <div className="absolute left-1/2 top-0 -translate-x-1/2 bg-white px-2 text-sm font-black leading-5">{label}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="absolute text-slate-950" style={{ left, top, width: 30, height: length }}>
-      <div className="absolute bottom-0 top-0 left-3 border-l border-slate-500" />
-      <div className="absolute left-0 top-0 w-6 border-t border-slate-500" />
-      <div className="absolute bottom-0 left-0 w-6 border-t border-slate-500" />
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 -rotate-90 bg-white px-2 text-sm font-black leading-5">{label}</div>
-    </div>
-  );
 }
