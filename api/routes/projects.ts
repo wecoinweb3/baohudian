@@ -1,11 +1,17 @@
 import express from 'express';
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import Database from 'better-sqlite3';
 
 const router = express.Router();
 const dataDir = './data';
 const dbPath = path.join(dataDir, 'design-projects.sqlite');
+
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+const db = new Database(dbPath);
 
 interface ProjectRow {
   id: string;
@@ -23,11 +29,7 @@ interface ProjectRow {
 }
 
 const ensureDatabase = () => {
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-
-  runSql(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS projects (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -43,18 +45,6 @@ const ensureDatabase = () => {
       updated_at TEXT NOT NULL
     );
   `);
-};
-
-const escapeSql = (value: unknown) => String(value ?? '').replace(/'/g, "''");
-
-const runSql = (sql: string) => {
-  execFileSync('sqlite3', [dbPath, sql], { encoding: 'utf-8' });
-};
-
-const querySql = <T>(sql: string): T[] => {
-  const output = execFileSync('sqlite3', ['-json', dbPath, sql], { encoding: 'utf-8' });
-  if (!output.trim()) return [];
-  return JSON.parse(output) as T[];
 };
 
 const mapProject = (row: ProjectRow) => ({
@@ -95,11 +85,46 @@ const buildDefaultCanvasData = (params: {
 
 ensureDatabase();
 
+const listProjectsStatement = db.prepare(`
+  SELECT * FROM projects ORDER BY datetime(created_at) DESC;
+`);
+
+const getProjectByIdStatement = db.prepare(`
+  SELECT * FROM projects WHERE id = ? LIMIT 1;
+`);
+
+const createProjectStatement = db.prepare(`
+  INSERT INTO projects (
+    id, name, thumbnail, width, height, unit, background_color,
+    bleedless_width, bleedless_height, canvas_data, created_at, updated_at
+  ) VALUES (
+    @id, @name, @thumbnail, @width, @height, @unit, @background_color,
+    @bleedless_width, @bleedless_height, @canvas_data, @created_at, @updated_at
+  );
+`);
+
+const updateProjectStatement = db.prepare(`
+  UPDATE projects SET
+    name = @name,
+    thumbnail = @thumbnail,
+    width = @width,
+    height = @height,
+    unit = @unit,
+    background_color = @background_color,
+    bleedless_width = @bleedless_width,
+    bleedless_height = @bleedless_height,
+    canvas_data = @canvas_data,
+    updated_at = @updated_at
+  WHERE id = @id;
+`);
+
+const deleteProjectStatement = db.prepare(`
+  DELETE FROM projects WHERE id = ?;
+`);
+
 router.get('/', (req, res) => {
   try {
-    const rows = querySql<ProjectRow>(`
-      SELECT * FROM projects ORDER BY datetime(created_at) DESC;
-    `);
+    const rows = listProjectsStatement.all() as ProjectRow[];
     res.json({ projects: rows.map(mapProject) });
   } catch (error) {
     console.error('Failed to list projects:', error);
@@ -109,12 +134,11 @@ router.get('/', (req, res) => {
 
 router.get('/:id', (req, res) => {
   try {
-    const id = escapeSql(req.params.id);
-    const rows = querySql<ProjectRow>(`SELECT * FROM projects WHERE id = '${id}' LIMIT 1;`);
-    if (!rows[0]) {
+    const row = getProjectByIdStatement.get(req.params.id) as ProjectRow | undefined;
+    if (!row) {
       return res.status(404).json({ success: false, error: 'Project not found' });
     }
-    res.json({ project: mapProject(rows[0]) });
+    res.json({ project: mapProject(row) });
   } catch (error) {
     console.error('Failed to get project:', error);
     res.status(500).json({ success: false, error: 'Failed to get project' });
@@ -141,19 +165,27 @@ router.post('/', (req, res) => {
       bleedlessHeight,
     });
 
-    runSql(`
-      INSERT INTO projects (
-        id, name, thumbnail, width, height, unit, background_color,
-        bleedless_width, bleedless_height, canvas_data, created_at, updated_at
-      ) VALUES (
-        '${escapeSql(id)}', '${escapeSql(name)}', '', ${width}, ${height}, '${escapeSql(unit)}',
-        '${escapeSql(backgroundColor)}', ${bleedlessWidth}, ${bleedlessHeight},
-        '${escapeSql(JSON.stringify(canvasData))}', '${now}', '${now}'
-      );
-    `);
+    createProjectStatement.run({
+      id,
+      name,
+      thumbnail: '',
+      width,
+      height,
+      unit,
+      background_color: backgroundColor,
+      bleedless_width: bleedlessWidth,
+      bleedless_height: bleedlessHeight,
+      canvas_data: JSON.stringify(canvasData),
+      created_at: now,
+      updated_at: now,
+    });
 
-    const rows = querySql<ProjectRow>(`SELECT * FROM projects WHERE id = '${escapeSql(id)}' LIMIT 1;`);
-    res.json({ success: true, project: mapProject(rows[0]) });
+    const row = getProjectByIdStatement.get(id) as ProjectRow | undefined;
+    if (!row) {
+      return res.status(500).json({ success: false, error: 'Failed to create project' });
+    }
+
+    res.json({ success: true, project: mapProject(row) });
   } catch (error) {
     console.error('Failed to create project:', error);
     res.status(500).json({ success: false, error: 'Failed to create project' });
@@ -162,37 +194,47 @@ router.post('/', (req, res) => {
 
 router.put('/:id', (req, res) => {
   try {
-    const id = escapeSql(req.params.id);
+    const id = req.params.id;
     const now = new Date().toISOString();
+    const width = Number(req.body.width || 1200);
+    const height = Number(req.body.height || 700);
+    const unit = req.body.unit || 'cm';
+    const backgroundColor = req.body.backgroundColor || '#ffffff';
+    const bleedlessWidth = Number(req.body.bleedlessWidth || 840);
+    const bleedlessHeight = Number(req.body.bleedlessHeight || 400);
     const canvasData = req.body.canvasData || buildDefaultCanvasData({
-      width: Number(req.body.width || 1200),
-      height: Number(req.body.height || 700),
-      unit: req.body.unit || 'cm',
-      backgroundColor: req.body.backgroundColor || '#ffffff',
-      bleedlessWidth: Number(req.body.bleedlessWidth || 840),
-      bleedlessHeight: Number(req.body.bleedlessHeight || 400),
+      width,
+      height,
+      unit,
+      backgroundColor,
+      bleedlessWidth,
+      bleedlessHeight,
     });
 
-    runSql(`
-      UPDATE projects SET
-        name = '${escapeSql(req.body.name || '未命名项目')}',
-        thumbnail = '${escapeSql(req.body.thumbnail || '')}',
-        width = ${Number(req.body.width || 1200)},
-        height = ${Number(req.body.height || 700)},
-        unit = '${escapeSql(req.body.unit || 'cm')}',
-        background_color = '${escapeSql(req.body.backgroundColor || '#ffffff')}',
-        bleedless_width = ${Number(req.body.bleedlessWidth || 840)},
-        bleedless_height = ${Number(req.body.bleedlessHeight || 400)},
-        canvas_data = '${escapeSql(JSON.stringify(canvasData))}',
-        updated_at = '${now}'
-      WHERE id = '${id}';
-    `);
+    const result = updateProjectStatement.run({
+      id,
+      name: req.body.name || '未命名项目',
+      thumbnail: req.body.thumbnail || '',
+      width,
+      height,
+      unit,
+      background_color: backgroundColor,
+      bleedless_width: bleedlessWidth,
+      bleedless_height: bleedlessHeight,
+      canvas_data: JSON.stringify(canvasData),
+      updated_at: now,
+    });
 
-    const rows = querySql<ProjectRow>(`SELECT * FROM projects WHERE id = '${id}' LIMIT 1;`);
-    if (!rows[0]) {
+    if (result.changes === 0) {
       return res.status(404).json({ success: false, error: 'Project not found' });
     }
-    res.json({ success: true, project: mapProject(rows[0]) });
+
+    const row = getProjectByIdStatement.get(id) as ProjectRow | undefined;
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Project not found' });
+    }
+
+    res.json({ success: true, project: mapProject(row) });
   } catch (error) {
     console.error('Failed to update project:', error);
     res.status(500).json({ success: false, error: 'Failed to update project' });
@@ -201,7 +243,7 @@ router.put('/:id', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   try {
-    runSql(`DELETE FROM projects WHERE id = '${escapeSql(req.params.id)}';`);
+    deleteProjectStatement.run(req.params.id);
     res.json({ success: true });
   } catch (error) {
     console.error('Failed to delete project:', error);

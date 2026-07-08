@@ -86,21 +86,19 @@ data/design-projects.sqlite
 CREATE TABLE IF NOT EXISTS projects (...)
 ```
 
-但当前实现是通过系统命令调用 `sqlite3`：
+当前实现已经改为 Node.js 直接通过 SQLite 驱动访问数据库：
 
-```ts
-execFileSync('sqlite3', [dbPath, sql])
+```txt
+better-sqlite3
 ```
 
-所以云服务器必须安装 `sqlite3` 命令行工具。
-
-### Ubuntu / Debian 安装 SQLite
+因此部署时**不需要再单独安装系统级 `sqlite3` 命令行工具**，只需要正常执行：
 
 ```bash
-sudo apt update
-sudo apt install -y sqlite3
-sqlite3 --version
+npm install
 ```
+
+确保 Node 依赖安装完成即可。
 
 ### 数据持久化注意事项
 
@@ -148,7 +146,6 @@ SQLite 文件 data/design-projects.sqlite
 
 - Node.js：`>= 20`
 - npm：随 Node 安装
-- sqlite3：系统命令行工具
 - Nginx：用于静态文件托管和反向代理
 - PM2：用于后台运行 Node.js 服务
 
@@ -156,7 +153,7 @@ SQLite 文件 data/design-projects.sqlite
 
 ```bash
 sudo apt update
-sudo apt install -y nginx sqlite3 git curl
+sudo apt install -y nginx git curl
 
 # 安装 Node.js 20，以 NodeSource 为例
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
@@ -171,7 +168,6 @@ sudo npm install -g pm2
 ```bash
 node -v
 npm -v
-sqlite3 --version
 nginx -v
 pm2 -v
 ```
@@ -464,7 +460,7 @@ SQLite 文件数据库
 
 1. `.env` 不应提交到 Git 仓库
 2. `data/*.sqlite` 建议加入 `.gitignore`，生产数据通过服务器持久化保存
-3. 后端 SQLite 当前通过拼接 SQL 实现，后续建议改成参数化查询，避免 SQL 注入风险
+3. 当前已经改为 Node 直连 SQLite，并使用参数化查询，部署时不再依赖系统 `sqlite3` 命令
 4. 删除项目等危险操作也建议使用自定义弹窗替代系统确认框
 5. 如果多人同时编辑，SQLite 和当前接口需要增加并发和权限设计
 6. 如果后期增加 AI 抠图，应把大模型接口放在后端，不要在前端暴露密钥

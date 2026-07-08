@@ -449,79 +449,78 @@ npx tsx --version
 
 ---
 
-## 7. 当前项目 SQLite 的关键坑
+## 7. 当前项目 SQLite 的关键说明
 
-这是你部署时最容易踩坑的地方。
+现在项目已经改为：
 
-当前项目不是通过 Node 包直接连 SQLite，而是通过系统命令调用：
-
-```ts
-execFileSync('sqlite3', [dbPath, sql])
+```txt
+Node.js 直接通过 SQLite 驱动访问数据库
 ```
 
 也就是说：
 
-## 运行环境里必须能执行 `sqlite3`
+- **不再依赖系统里的 `sqlite3` 命令**
+- 1Panel / Docker 容器里 **不用额外安装 sqlite3 可执行程序**
+- 只要执行 `npm install` 安装依赖即可
 
-否则后端虽然启动成功，但以下功能会失败：
-
-- 新建项目
-- 保存项目
-- 获取历史项目
-- 删除项目
+这比之前“调用系统 sqlite3 命令”的方式更适合 1Panel 部署。
 
 ---
 
-## 8. 怎么检查 sqlite3 是否可用
+## 8. 现在需要检查什么？
 
-进入 1Panel 运行环境终端，执行：
+进入 1Panel 运行环境终端，重点检查下面两项：
+
+### 8.1 依赖是否安装完成
 
 ```bash
-sqlite3 --version
+npm install
 ```
 
-### 情况 A：有版本号输出
+### 8.2 SQLite 驱动是否安装成功
 
-说明环境正常，可以继续。
+执行：
 
-### 情况 B：提示命令不存在
+```bash
+npm ls better-sqlite3
+```
 
-说明当前 Node 运行环境镜像里没有 sqlite3，需要处理。
+如果能看到 `better-sqlite3` 出现在依赖树中，说明数据库驱动已经安装成功。
+
+### 8.3 后端能否正常启动
+
+只要后端启动成功，并且下面接口可访问，就说明数据库正常：
+
+```bash
+curl http://127.0.0.1:3001/api/health
+curl http://127.0.0.1:3001/api/projects
+```
+
+### 正常情况
+
+如果 `/api/projects` 能正常返回 JSON，即使是空数组，也说明 SQLite 已经能被 Node 直接访问。
 
 ---
 
-## 9. 如果 sqlite3 不存在怎么办
+## 9. 不再需要安装 sqlite3 系统命令
 
-### 方案 1：在运行环境容器里安装 sqlite3
+这一步可以直接删除原来的思路：
 
-如果容器支持 `apt`：
+- 不需要 `sqlite3 --version`
+- 不需要 `apt install sqlite3`
+- 不需要 `apk add sqlite`
 
-```bash
-apt update && apt install -y sqlite3
-```
-
-如果容器支持 `apk`：
+当前正确做法是：
 
 ```bash
-apk add sqlite
+npm install
 ```
 
-装好后再次执行：
+然后直接启动后端：
 
 ```bash
-sqlite3 --version
+npx tsx api/server.ts
 ```
-
-> 注意：某些容器重建后，手工安装的软件会丢失。
-
-### 方案 2：后续改代码，去掉对 sqlite3 命令的依赖
-
-更稳妥的长期方案是，把项目改为使用 Node.js SQLite 库，例如：
-
-- `better-sqlite3`
-- `sqlite3`
-
-这样就不需要容器里安装系统级 `sqlite3` 命令，更适合 1Panel / Docker 场景。
 
 ---
 
@@ -700,10 +699,11 @@ npm install
 npm install
 ```
 
-### 第四步：检查 sqlite3
+### 第四步：安装并检查 SQLite 驱动
 
 ```bash
-sqlite3 --version
+npm install
+npm ls better-sqlite3
 ```
 
 ### 第五步：检查健康接口
@@ -738,7 +738,7 @@ curl http://127.0.0.1:3001/api/health
 
 1. `/api` 反向代理是否配置正确
 2. 后端运行环境是否成功启动
-3. `sqlite3 --version` 是否可用
+3. `npm ls better-sqlite3` 是否正常
 4. `data/` 是否存在且可写
 
 ---
@@ -758,7 +758,7 @@ curl http://127.0.0.1:3001/api/health
 优先检查：
 
 - `data/design-projects.sqlite` 是否生成
-- 容器里是否有 `sqlite3`
+- `better-sqlite3` 是否安装成功
 - 后端日志中是否有数据库报错
 
 ---
@@ -818,7 +818,7 @@ data/design-projects.sqlite
 2. 先不要急着配站点代理
 3. 先在运行环境终端里验证：
    - `npm install`
-   - `sqlite3 --version`
+   - `npm ls better-sqlite3`
    - `curl http://127.0.0.1:3001/api/health`
 4. 确认后端没问题后，再回前端站点配 `/api`
 
