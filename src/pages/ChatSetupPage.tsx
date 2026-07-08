@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { Clock3, Download, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
 import { normalizeDraft, PRESET_PROMPTS, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
 import type { ConversationItem } from '../types';
@@ -48,6 +48,17 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [previewScale, setPreviewScale] = useState(1);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [composerHeight, setComposerHeight] = useState(188);
+  const [headerHeight, setHeaderHeight] = useState(76);
+
+  useEffect(() => {
+    const measure = () => {
+      const header = document.querySelector('header');
+      if (header) setHeaderHeight(header.getBoundingClientRect().height);
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
@@ -95,14 +106,6 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
       window.removeEventListener('resize', updateComposerHeight);
     };
   }, [input, isGenerating]);
-
-  const mobileLayoutStyle = {
-    '--mobile-composer-offset': `${composerHeight + 8}px`,
-  } as CSSProperties;
-
-  const mobileMessageCardStyle = {
-    height: `calc(100% - ${composerHeight + 8}px)`,
-  } as CSSProperties;
 
   const handleSubmit = async () => {
     const content = input.trim();
@@ -279,7 +282,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
   return (
     <div
-      className="relative mx-auto flex min-h-[calc(var(--app-viewport-height,100dvh)-88px)] w-full max-w-none gap-3 px-0 pt-3 sm:h-full sm:min-h-0 sm:px-4 sm:pb-3 lg:gap-4"
+      className="relative mx-auto flex h-full w-full max-w-none gap-3 px-0 pt-3 sm:px-4 sm:pb-3 lg:gap-4"
     >
       {!sidebarCollapsed && (
         <button
@@ -332,10 +335,14 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
         )}
       </aside>
 
-      <section style={mobileLayoutStyle} className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden sm:h-full sm:pb-0">
-        <div className="flex min-h-0 h-full flex-col gap-2 sm:flex-1 sm:gap-4">
-          <div style={mobileMessageCardStyle} className="min-h-0 border border-slate-200 bg-white p-3 shadow-sm sm:h-auto sm:flex-1 sm:p-6">
-            <div ref={messagesScrollRef} className="h-full overflow-y-auto px-3 pb-3 pr-3 sm:px-0 sm:pb-4 sm:pr-1">
+      <section className="relative min-w-0 flex-1 sm:flex sm:min-h-0 sm:flex-col sm:overflow-hidden sm:h-full sm:pb-0">
+        <div className="flex flex-col gap-2 sm:flex-1 sm:min-h-0 sm:gap-4">
+          <div className="border border-slate-200 bg-white p-3 shadow-sm sm:flex-1 sm:min-h-0 sm:p-6">
+            <div
+              ref={messagesScrollRef}
+              className="overflow-y-auto px-3 pr-3 sm:h-full sm:overflow-y-auto sm:px-0 sm:pr-1 sm:pb-4"
+              style={{ maxHeight: `calc(var(--app-viewport-height, 100dvh) - ${headerHeight}px - ${composerHeight}px - 56px)` }}
+            >
               <div className="space-y-4">
                 {messages.map((message) => (
                   <div key={message.id} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
