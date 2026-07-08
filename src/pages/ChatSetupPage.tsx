@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { Clock3, Download, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
-import { normalizeDraft, PRESET_PROMPTS, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
+import { ChevronDown, Clock3, Download, LoaderCircle, RotateCw, Send, Trash2, X } from 'lucide-react';
+import { normalizeDraft, type ChatMessage, type ConversationDesignDraft } from '../lib/chatDesign';
 import type { ConversationItem } from '../types';
 import { api } from '../utils/api';
 
+type PresetPrompt = { id: string; title: string; description: string; prompt: string; thumbnailUrl: string; sortOrder: number };
+
 const initialMessages: ChatMessage[] = [
-  { id: 'welcome', role: 'assistant', content: '你好，我可以帮你通过对话快速配置保护垫画布、非留白区域以及标题、图片、色块等元素。你可以直接输入需求，也可以点击下方高频模板。' },
+  { id: 'welcome', role: 'assistant', content: '你好，我可以帮你通过对话快速配置保护垫画布、非留白区域以及标题、图片、色块等元素。你可以直接输入需求，也可以点击下方示例模板。' },
 ];
 
 function getFriendlyAssistantError(input: string, error: Error) {
@@ -49,6 +51,19 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [previewRotation, setPreviewRotation] = useState(0);
   const [composerHeight, setComposerHeight] = useState(188);
   const [headerHeight, setHeaderHeight] = useState(76);
+  const [presetPrompts, setPresetPrompts] = useState<PresetPrompt[]>([]);
+  const [showPresets, setShowPresets] = useState(false);
+  const [zoomPresetImage, setZoomPresetImage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!showPresets) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-presets-menu]')) setShowPresets(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [showPresets]);
 
   useEffect(() => {
     const measure = () => {
@@ -70,6 +85,11 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
   useEffect(() => {
     void loadConversationHistory();
+    void api.presetPrompts.list().then((result) => {
+      if (result.success && result.presets.length > 0) {
+        setPresetPrompts(result.presets);
+      }
+    });
   }, []);
 
   useEffect(() => {
@@ -394,13 +414,61 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               >
                 清空
               </button>
-              <button
-                type="button"
-                onClick={() => setInput(PRESET_PROMPTS[0]?.prompt || '')}
-                className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-              >
-                示例模板
-              </button>
+              <div className="relative" data-presets-menu>
+                <button
+                  type="button"
+                  onClick={() => setShowPresets((v) => !v)}
+                  className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                >
+                  示例模板
+                  <ChevronDown className={`h-3 w-3 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
+                </button>
+                {showPresets && presetPrompts.length > 0 && (
+                  <div className="absolute bottom-full right-0 z-50 mb-1 w-80 border border-slate-200 bg-white shadow-xl">
+                    <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">选择模板（点击图片可放大）</div>
+                    <div className="max-h-[70vh] overflow-y-auto">
+                      {presetPrompts.map((preset) => (
+                        <div key={preset.id} className="flex gap-3 border-b border-slate-50 p-3 last:border-0 hover:bg-slate-50">
+                          {/* 缩略图 */}
+                          {preset.thumbnailUrl ? (
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); setZoomPresetImage(preset.thumbnailUrl); }}
+                              className="relative h-16 w-24 shrink-0 overflow-hidden border border-slate-200 bg-slate-100"
+                              title="点击放大查看"
+                            >
+                              <img
+                                src={preset.thumbnailUrl}
+                                alt={preset.title}
+                                className="h-full w-full object-cover transition hover:scale-105"
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition hover:bg-black/20">
+                                <svg className="h-4 w-4 text-white opacity-0 drop-shadow transition group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
+                              </div>
+                            </button>
+                          ) : (
+                            <div className="h-16 w-24 shrink-0 bg-slate-100 border border-slate-200" />
+                          )}
+                          {/* 文字 + 使用按钮 */}
+                          <div className="flex min-w-0 flex-1 flex-col justify-between">
+                            <div>
+                              <div className="text-xs font-semibold text-slate-800">{preset.title}</div>
+                              <div className="mt-0.5 text-xs leading-5 text-slate-400">{preset.description}</div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => { setInput(preset.prompt); setShowPresets(false); }}
+                              className="mt-1 self-start border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-600 hover:text-white"
+                            >
+                              使用此模板
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
             <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：120×70，白底，安全区域 84×40，放红色标题、底部横条和产品图。" className="h-14 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
             <div className="mt-2 flex border-t border-slate-200 pt-2 sm:mt-3 sm:pt-3 sm:justify-end">
@@ -468,6 +536,30 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               onTouchEnd={handlePreviewTouchEnd}
               className="max-h-[90vh] max-w-[90vw] border border-slate-700 bg-white object-contain shadow-2xl"
               style={{ transform: `scale(${previewScale}) rotate(${previewRotation}deg)`, transformOrigin: 'center center', touchAction: 'none' }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 模板图片放大遮罩 */}
+      {zoomPresetImage && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/85 p-4"
+          onClick={() => setZoomPresetImage(null)}
+        >
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              onClick={() => setZoomPresetImage(null)}
+              className="absolute right-2 top-2 z-10 inline-flex h-9 w-9 items-center justify-center bg-black/60 text-white transition hover:bg-black/80"
+              aria-label="关闭图片预览"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <img
+              src={zoomPresetImage}
+              alt="模板预览"
+              className="max-h-[88vh] max-w-[90vw] border border-slate-600 bg-white object-contain shadow-2xl"
             />
           </div>
         </div>

@@ -17,6 +17,7 @@ import generateRoutes from './routes/generate.js'
 import projectsRoutes from './routes/projects.js'
 import settingsRoutes from './routes/settings.js'
 import conversationsRoutes from './routes/conversations.js'
+import presetPromptsRoutes from './routes/presetPrompts.js'
 
 // for esm mode
 const __filename = fileURLToPath(import.meta.url)
@@ -38,6 +39,7 @@ app.use('/api/generate', generateRoutes)
 app.use('/api/projects', projectsRoutes)
 app.use('/api/settings', settingsRoutes)
 app.use('/api/conversations', conversationsRoutes)
+app.use('/api/preset-prompts', presetPromptsRoutes)
 
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')))
 

@@ -123,6 +123,24 @@ export const api = {
       return response.json();
     },
   },
+  presetPrompts: {
+    list: async (): Promise<{ success: boolean; presets: Array<{ id: string; title: string; description: string; prompt: string; thumbnailUrl: string; sortOrder: number }>; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/preset-prompts`);
+      return response.json();
+    },
+    save: async (data: { id?: string; title: string; description: string; prompt: string; sortOrder?: number }): Promise<{ success: boolean; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/preset-prompts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    delete: async (id: string): Promise<{ success: boolean; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/preset-prompts/${id}`, { method: 'DELETE' });
+      return response.json();
+    },
+  },
   conversations: {
     list: async (): Promise<{ conversations: ConversationItem[] }> => {
       const response = await fetch(`${BASE_URL}/conversations`);
