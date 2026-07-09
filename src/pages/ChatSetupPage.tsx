@@ -157,12 +157,14 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [showPresets, setShowPresets] = useState(false);
   const [zoomPresetImage, setZoomPresetImage] = useState<string | null>(null);
   const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [presetDialogMessage, setPresetDialogMessage] = useState('请先在管理端启用模板。');
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [pendingQuickCommand, setPendingQuickCommand] = useState<string | null>(null);
   const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; name: string; src: string }>>([]);
   const [uploadedReferenceImages, setUploadedReferenceImages] = useState<Array<{ id: string; name: string; src: string }>>([]);
   const [shouldPreprocessLogos, setShouldPreprocessLogos] = useState(true);
+  const [quickAdjustOpen, setQuickAdjustOpen] = useState(false);
   const [conversationContext, setConversationContext] = useState<ConversationContext>({
     stage: 'idle',
     latestDraft: null,
@@ -383,12 +385,17 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
       if (nextPresets.length === 0) {
         setShowPresets(false);
+        setPresetDialogMessage(result.success ? '请先在管理端启用模板。' : (result.error || '模板数据加载失败，请检查后端服务和数据库连接。'));
         setPresetDialogOpen(true);
         return;
       }
 
       setPresetDialogOpen(false);
       setShowPresets((v) => !v);
+    } catch (error) {
+      setShowPresets(false);
+      setPresetDialogMessage((error as Error).message || '模板数据加载失败，请检查后端服务和数据库连接。');
+      setPresetDialogOpen(true);
     } finally {
       setIsLoadingPresets(false);
     }
@@ -1019,13 +1026,12 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
         )}
       </aside>
 
-      <section className="relative min-w-0 flex-1 sm:flex sm:min-h-0 sm:flex-col sm:overflow-hidden sm:h-full sm:pb-0">
-        <div className="flex flex-col gap-2 sm:flex-1 sm:min-h-0 sm:gap-4">
-          <div className="border border-slate-200 bg-white p-3 shadow-sm sm:flex-1 sm:min-h-0 sm:p-6">
+      <section className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden pb-[210px] sm:min-h-0 sm:pb-0">
+        <div className="flex min-h-0 flex-1 flex-col gap-2 sm:gap-4">
+          <div className="min-h-0 flex-1 border border-slate-200 bg-white p-3 shadow-sm sm:p-6">
             <div
               ref={messagesScrollRef}
-              className="overflow-y-auto px-3 pr-3 sm:h-full sm:overflow-y-auto sm:px-0 sm:pr-1 sm:pb-4"
-              style={{ maxHeight: `calc(var(--app-viewport-height, 100dvh) - ${headerHeight}px - ${composerHeight}px - 56px)` }}
+              className="h-full overflow-y-auto px-3 pr-3 sm:px-0 sm:pr-1 sm:pb-4"
             >
               <div className="space-y-4">
                 {messages.map((message) => (
@@ -1185,14 +1191,14 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
           </div>
 
           <div ref={composerRef} className="fixed bottom-0 left-3 right-3 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg md:static md:left-auto md:right-auto md:z-auto md:mx-0 md:shrink-0 md:p-4 md:pb-4">
-            <div className="mb-2 flex items-start justify-between gap-4 sm:mb-3">
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="flex min-w-[160px] items-center gap-2">
+            <div className="mb-2 flex items-start justify-between gap-2 sm:mb-3 sm:gap-4">
+              <div className="min-w-0 flex-1 space-y-2">
+                <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-4">
+                  <div className="flex items-center gap-2 sm:min-w-[160px]">
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
-                      className="inline-flex items-center justify-center gap-1 border border-slate-200 bg-white px-8 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                      className="inline-flex items-center justify-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 sm:px-8"
                     >
                       <ImagePlus className="h-3 w-3" />添加logo
                     </button>
@@ -1209,18 +1215,20 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     )}
                   </div>
 
-                  <div className="min-w-[160px]">
+                  <div className="sm:min-w-[160px]">
                     <button
                       type="button"
                       onClick={() => referenceFileInputRef.current?.click()}
-                      className="inline-flex items-center justify-center gap-1 border border-slate-200 bg-white px-8 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                      className="inline-flex items-center justify-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800 sm:px-8"
                     >
-                      <Images className="h-3 w-3" />添加参考图
+                      <Images className="h-3 w-3" />参考图
                     </button>
                   </div>
                 </div>
 
+                {(uploadedImages.length > 0 || uploadedReferenceImages.length > 0) && (
                 <div className="flex flex-wrap items-start gap-4">
+                  {uploadedImages.length > 0 && (
                   <div className="flex min-h-12 min-w-[160px] flex-wrap gap-2">
                     {uploadedImages.map((img) => (
                       <div key={img.id} className="relative flex h-12 w-12 items-center justify-center border border-slate-200 bg-slate-50 p-1">
@@ -1235,7 +1243,9 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                       </div>
                     ))}
                   </div>
+                  )}
 
+                  {uploadedReferenceImages.length > 0 && (
                   <div className="flex min-h-12 min-w-[160px] flex-wrap gap-2">
                     {uploadedReferenceImages.map((img) => (
                       <div key={img.id} className="relative flex h-12 w-12 items-center justify-center border border-amber-200 bg-amber-50 p-1">
@@ -1250,7 +1260,9 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                       </div>
                     ))}
                   </div>
+                  )}
                 </div>
+                )}
 
                 <input
                   ref={fileInputRef}
@@ -1269,12 +1281,12 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                   className="hidden"
                 />
               </div>
-              <div className="relative" data-presets-menu>
+              <div className="relative shrink-0" data-presets-menu>
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
                     onClick={() => void handleOpenPresets()}
-                    className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                    className="inline-flex items-center gap-1 whitespace-nowrap border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
                   >
                     示例模板
                     <ChevronDown className={`h-3 w-3 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
@@ -1286,13 +1298,13 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                       setUploadedImages([]);
                       setUploadedReferenceImages([]);
                     }}
-                    className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                    className="whitespace-nowrap border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
                   >
                     清空
                   </button>
                 </div>
                 {showPresets && presetPrompts.length > 0 && (
-                  <div className="absolute bottom-full right-0 z-50 mb-1 w-80 border border-slate-200 bg-white shadow-xl">
+                  <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+188px)] left-3 right-3 z-[90] max-h-[60vh] border border-slate-200 bg-white shadow-xl sm:absolute sm:bottom-full sm:left-auto sm:right-0 sm:z-50 sm:mb-1 sm:max-h-none sm:w-80">
                     <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">选择模板（点击图片可放大）</div>
                     <div className="max-h-[70vh] overflow-y-auto">
                       {presetPrompts.map((preset) => (
@@ -1338,8 +1350,21 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               </div>
             </div>
             {hasAdjustableDraft && (
-              <div className="mb-3 space-y-2 border border-slate-200 bg-slate-50 p-3">
-                <div className="flex items-center justify-between gap-2">
+              <div className="mb-2 border border-slate-200 bg-slate-50 p-2 sm:mb-3 sm:p-3">
+                <button
+                  type="button"
+                  onClick={() => setQuickAdjustOpen((value) => !value)}
+                  className="flex w-full items-center justify-between text-left sm:hidden"
+                >
+                  <span>
+                    <span className="block text-xs font-semibold text-slate-800">快速微调</span>
+                    <span className="mt-0.5 block text-[11px] text-slate-500">点开后调整上一版参数</span>
+                  </span>
+                  <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${quickAdjustOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                <div className={`${quickAdjustOpen ? 'block' : 'hidden'} space-y-2 sm:block`}>
+                <div className="hidden items-center justify-between gap-2 sm:flex">
                   <div>
                     <div className="text-xs font-semibold text-slate-800">快速微调</div>
                     <div className="mt-0.5 text-[11px] text-slate-500">先用选项改高频参数；复杂调整仍可直接输入文字。</div>
@@ -1426,6 +1451,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     </button>
                   ))}
                 </div>
+                </div>
               </div>
             )}
             {conversationStage === 'awaiting_prompt_confirmation' && (
@@ -1433,7 +1459,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 当前是“待确认提示词”阶段：我已经根据参考图整理好一版可编辑文案。你可以先修改输入框内容，确认后再点击发送，系统才会正式生图。
               </div>
             )}
-            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。也可以说：在上一版基础上，logo往右一点。" className="h-14 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
+            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。也可以说：在上一版基础上，logo往右一点。" className="h-20 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
             <div className="mt-2 flex border-t border-slate-200 pt-2 sm:mt-3 sm:pt-3 sm:justify-end">
               <button
                 type="button"
@@ -1540,7 +1566,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
         <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 px-4">
           <div className="w-full max-w-sm border border-slate-200 bg-white p-6 shadow-xl">
             <div className="text-base font-semibold text-slate-900">暂无可用模板</div>
-            <div className="mt-2 text-sm text-slate-600">请先在管理端启用模板。</div>
+            <div className="mt-2 text-sm text-slate-600">{presetDialogMessage}</div>
             <div className="mt-5 flex justify-end">
               <button
                 type="button"
