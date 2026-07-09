@@ -4,7 +4,7 @@ import { normalizeDraft, type ChatMessage, type ConversationDesignDraft } from '
 import type { ConversationItem } from '../types';
 import { api } from '../utils/api';
 
-type PresetPrompt = { id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number };
+type PresetPrompt = { id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number; enabled: boolean };
 
 const initialMessages: ChatMessage[] = [
   { id: 'welcome', role: 'assistant', content: '你好，我可以生成保护垫效果图。你可以直接输入描述，也可以基于示例模板进行修改。' },
@@ -54,6 +54,8 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [presetPrompts, setPresetPrompts] = useState<PresetPrompt[]>([]);
   const [showPresets, setShowPresets] = useState(false);
   const [zoomPresetImage, setZoomPresetImage] = useState<string | null>(null);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [uploadedImages, setUploadedImages] = useState<Array<{ id: string; name: string; src: string }>>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,11 +89,6 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
 
   useEffect(() => {
     void loadConversationHistory();
-    void api.presetPrompts.list().then((result) => {
-      if (result.success && result.presets.length > 0) {
-        setPresetPrompts(result.presets);
-      }
-    });
   }, []);
 
   useEffect(() => {
@@ -149,6 +146,48 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
     setUploadedImages((prev) => prev.filter((img) => img.id !== id));
   };
 
+  const handleUsePreset = async (presetId: string) => {
+    const result = await api.presetPrompts.get(presetId);
+    if (!result.success || !result.preset) return;
+    setInput(result.preset.prompt);
+    setShowPresets(false);
+  };
+
+  const handleTogglePresets = async () => {
+    if (isLoadingPresets) return;
+
+    setIsLoadingPresets(true);
+    try {
+      const result = await api.presetPrompts.list({ enabledOnly: true });
+      const nextPresets = result.success ? result.presets : [];
+      setPresetPrompts(nextPresets);
+
+      if (nextPresets.length === 0) {
+        setShowPresets(false);
+        setPresetDialogOpen(true);
+        return;
+      }
+
+      setPresetDialogOpen(false);
+      setShowPresets((v) => !v);
+    } finally {
+      setIsLoadingPresets(false);
+    }
+  };
+
+  const handleClosePresetDialog = () => {
+    setPresetDialogOpen(false);
+  };
+
+  const handleOpenPresets = async () => {
+    if (presetPrompts.length === 0) {
+      setShowPresets(false);
+      await handleTogglePresets();
+      return;
+    }
+    await handleTogglePresets();
+  };
+
   const handleSubmit = async () => {
     const content = input.trim();
     if (!content || isGenerating) return;
@@ -178,7 +217,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
         throw new Error(result.error || '生成失败');
       }
 
-      const nextDraft = normalizeDraft(result.draft);
+      const nextDraft = normalizeDraft(result.draft, content);
       const imageUrl = await renderDraftToPng(nextDraft);
       const nextMessages = [
         ...nextUserAndThinkingMessages.filter((message) => message.id !== thinkingMessageId),
@@ -394,7 +433,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                           AI 思考中
                         </div>
                       )}
-                      {message.content}
+                      <div className="whitespace-pre-wrap break-words">{message.content}</div>
                       {message.imageUrl && (
                         <div className="mt-3">
                           <button
@@ -431,13 +470,6 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setInput('')}
-                  className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-                >
-                  清空
-                </button>
-                <button
-                  type="button"
                   onClick={() => fileInputRef.current?.click()}
                   className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
                 >
@@ -453,14 +485,23 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 />
               </div>
               <div className="relative" data-presets-menu>
-                <button
-                  type="button"
-                  onClick={() => setShowPresets((v) => !v)}
-                  className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
-                >
-                  示例模板
-                  <ChevronDown className={`h-3 w-3 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleOpenPresets()}
+                    className="inline-flex items-center gap-1 border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    示例模板
+                    <ChevronDown className={`h-3 w-3 transition-transform ${showPresets ? 'rotate-180' : ''}`} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInput('')}
+                    className="border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-100 hover:text-slate-800"
+                  >
+                    清空
+                  </button>
+                </div>
                 {showPresets && presetPrompts.length > 0 && (
                   <div className="absolute bottom-full right-0 z-50 mb-1 w-80 border border-slate-200 bg-white shadow-xl">
                     <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">选择模板（点击图片可放大）</div>
@@ -494,7 +535,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                             </div>
                             <button
                               type="button"
-                              onClick={() => { setInput(preset.prompt); setShowPresets(false); }}
+                              onClick={() => void handleUsePreset(preset.id)}
                               className="mt-1 self-start border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-600 hover:text-white"
                             >
                               使用此模板
@@ -618,6 +659,24 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
           </div>
         </div>
       )}
+
+      {presetDialogOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/40 px-4">
+          <div className="w-full max-w-sm border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="text-base font-semibold text-slate-900">暂无可用模板</div>
+            <div className="mt-2 text-sm text-slate-600">请先在管理端启用模板。</div>
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={handleClosePresetDialog}
+                className="bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700"
+              >
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -630,9 +689,10 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
   const safeLeft = (canvasWidth - safeWidth) / 2;
   const safeTop = (canvasHeight - safeHeight) / 2;
   const padding = 140;
+  const bottomMetaHeight = draft.bottomMeta?.proofingNote || (draft.bottomMeta?.colorLegend?.length ?? 0) > 0 ? 110 : 0;
   const canvas = document.createElement('canvas');
   canvas.width = canvasWidth + padding * 2;
-  canvas.height = canvasHeight + padding * 2;
+  canvas.height = canvasHeight + padding * 2 + bottomMetaHeight;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas not supported');
 
@@ -671,6 +731,36 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
   drawLine(originX + safeLeft, originY - 35, originX + safeLeft + safeWidth, originY - 35, `${draft.canvas.safeAreaWidth}CM`);
   drawLine(originX - 45, originY + safeTop, originX - 45, originY + safeTop + safeHeight, `${draft.canvas.safeAreaHeight}CM`, true);
   drawLine(originX + canvasWidth + 70, originY, originX + canvasWidth + 70, originY + canvasHeight, `${draft.canvas.height}CM`, true);
+
+  const drawWrappedText = (text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines = 4) => {
+    const normalized = text.replace(/\s*\n\s*/g, ' ');
+    const chars = normalized.split('');
+    let line = '';
+    let currentY = y;
+    let lineCount = 0;
+
+    for (const char of chars) {
+      const testLine = line + char;
+      if (ctx.measureText(testLine).width > maxWidth && line) {
+        ctx.fillText(line, x, currentY);
+        line = char;
+        currentY += lineHeight;
+        lineCount += 1;
+        if (lineCount >= maxLines - 1) break;
+      } else {
+        line = testLine;
+      }
+    }
+
+    if (line) {
+      const remainingText = lineCount >= maxLines - 1 && chars.join('').length > 0;
+      let finalLine = line;
+      while (remainingText && ctx.measureText(`${finalLine}…`).width > maxWidth && finalLine.length > 0) {
+        finalLine = finalLine.slice(0, -1);
+      }
+      ctx.fillText(remainingText ? `${finalLine}…` : finalLine, x, currentY);
+    }
+  };
 
   for (const item of draft.elements) {
     const x = originX + safeLeft + safeWidth * (item.x ?? 0);
@@ -721,6 +811,52 @@ async function renderDraftToPng(draft: ConversationDesignDraft) {
         ctx.textBaseline = 'middle';
         ctx.fillText('图片区', x + width / 2, y + height / 2);
       }
+    }
+  }
+
+  if (bottomMetaHeight > 0) {
+    const footerTop = originY + canvasHeight + 18;
+    const footerLeft = originX;
+    const footerWidth = canvasWidth;
+    const proofingWidth = Math.round(footerWidth * 0.68);
+    const legendWidth = footerWidth - proofingWidth;
+
+    ctx.fillStyle = '#111111';
+    ctx.font = 'bold 16px Microsoft YaHei';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+
+    if (draft.bottomMeta?.proofingNote) {
+      drawWrappedText(draft.bottomMeta.proofingNote, footerLeft, footerTop + 8, proofingWidth - 20, 20, 4);
+    }
+
+    const legends = draft.bottomMeta?.colorLegend || [];
+    if (legends.length > 0) {
+      const legendAreaLeft = footerLeft + proofingWidth + 12;
+      const swatchSize = 42;
+      let cursorX = legendAreaLeft;
+      const rowY = footerTop + 12;
+
+      legends.forEach((legend, index) => {
+        if (index > 0) cursorX += 26;
+        ctx.fillStyle = legend.swatchColor || '#ffffff';
+        ctx.fillRect(cursorX, rowY, swatchSize, swatchSize * 0.72);
+        ctx.strokeStyle = '#666666';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cursorX, rowY, swatchSize, swatchSize * 0.72);
+
+        ctx.fillStyle = '#111111';
+        ctx.font = 'bold 16px Microsoft YaHei';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(legend.label, cursorX + swatchSize + 10, rowY + 11);
+        ctx.font = '16px Microsoft YaHei';
+        ctx.fillText(legend.value, cursorX + swatchSize + 10, rowY + 31);
+
+        cursorX += swatchSize + 10 + Math.max(80, ctx.measureText(`${legend.label}${legend.value}`).width + 20);
+        if (cursorX > footerLeft + footerWidth - 120 && index < legends.length - 1) {
+          cursorX = legendAreaLeft;
+        }
+      });
     }
   }
 

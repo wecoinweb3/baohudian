@@ -38,6 +38,10 @@ export interface ConversationDesignDraft {
     unit: 'cm';
   };
   elements: ConversationDraftElement[];
+  bottomMeta?: {
+    proofingNote?: string;
+    colorLegend?: Array<{ label: string; value: string; swatchColor?: string }>;
+  };
   missingFields: string[];
   readyToGenerate: boolean;
 }
@@ -95,6 +99,7 @@ const createDefaultDraft = (): ConversationDesignDraft => ({
     unit: 'cm',
   },
   elements: [],
+  bottomMeta: undefined,
   missingFields: ['设计描述'],
   readyToGenerate: false,
 });
@@ -139,6 +144,62 @@ const extractSafeArea = (content: string) => {
   const matched = content.match(/(?:安全区域|非留白(?:区域)?)[^\d]{0,8}(\d{2,3})\s*[x×＊*]\s*(\d{2,3})/i);
   if (!matched) return null;
   return { width: Number(matched[1]), height: Number(matched[2]) };
+};
+
+const isProofingNoteText = (text: string) => /(?:底部印刷校对提示|温馨提示|校对提示|请仔细确认版面|二维码扫描|图稿颜色|色差|出错概不负责)/.test(text);
+
+const isColorLegendText = (text: string) => /(?:色标说明|材料颜色|印刷颜色|印刷专色|底材材料色)/.test(text);
+
+const normalizeLegendColor = (text: string) => {
+  if (/白|底材材料色/.test(text)) return '#ffffff';
+  if (/橙/.test(text)) return '#f97316';
+  if (/红/.test(text)) return '#ef4444';
+  if (/蓝/.test(text)) return '#2563eb';
+  if (/黄/.test(text)) return '#eab308';
+  if (/绿/.test(text)) return '#16a34a';
+  if (/黑/.test(text)) return '#111827';
+  return undefined;
+};
+
+const extractColorLegend = (text: string) => {
+  const normalized = text.replace(/色标说明[:：]?/g, '').replace(/\s+/g, ' ').trim();
+  const segments = normalized.split(/[；;。]/).map((item) => item.trim()).filter(Boolean);
+  const legends = segments.flatMap((segment) => {
+    const matched = segment.match(/(.+?)[:：]\s*(.+)/);
+    if (!matched) return [] as Array<{ label: string; value: string; swatchColor?: string }>;
+    return [{
+      label: matched[1].trim(),
+      value: matched[2].trim(),
+      swatchColor: normalizeLegendColor(matched[2]),
+    }];
+  });
+
+  if (legends.length > 0) return legends;
+
+  const compactColorMatches = Array.from(normalized.matchAll(/(白色|红色|橙色|蓝色|黄色|绿色|黑色|白|红|橙|蓝|黄|绿|黑)/g)).map((item) => item[0]);
+  if (compactColorMatches.length > 0) {
+    return compactColorMatches.map((colorText, index) => ({
+      label: index === 0 ? '材料颜色' : '印刷颜色',
+      value: colorText,
+      swatchColor: normalizeLegendColor(colorText),
+    }));
+  }
+
+  if (normalized) {
+    return [{
+      label: '色标说明',
+      value: normalized,
+      swatchColor: normalizeLegendColor(normalized),
+    }];
+  }
+
+  return [] as Array<{ label: string; value: string; swatchColor?: string }>;
+};
+
+const extractColorLegendFromPrompt = (prompt: string) => {
+  const matched = prompt.match(/(?:四[、，.]\s*)?色标说明\s*[:：]?\s*([\s\S]*?)(?:$|\n\s*[五六七八九十][、，.]|\n\s*$)/);
+  if (!matched?.[1]) return [] as Array<{ label: string; value: string; swatchColor?: string }>;
+  return extractColorLegend(matched[1]);
 };
 
 export const buildDraftFromPrompt = (prompt: string): ConversationDesignDraft => {
@@ -206,8 +267,51 @@ export const buildAssistantReply = (draft: ConversationDesignDraft) => {
   return `已生成画布：${draft.canvas.width}×${draft.canvas.height}cm，非留白 ${draft.canvas.safeAreaWidth}×${draft.canvas.safeAreaHeight}cm，包含 ${elementTypes.join('、')}。`;
 };
 
-export const normalizeDraft = (draft: Partial<ConversationDesignDraft>): ConversationDesignDraft => {
+export const normalizeDraft = (draft: Partial<ConversationDesignDraft>, originalPrompt?: string): ConversationDesignDraft => {
   const fallback = createDefaultDraft();
+  const rawElements = Array.isArray(draft.elements) ? draft.elements.filter((item) => ['text', 'rect', 'image'].includes(item.type)) : [];
+  const extractedProofingTexts: string[] = [];
+  const extractedLegends: Array<{ label: string; value: string; swatchColor?: string }> = [];
+
+  const normalizedElements = rawElements.filter((item) => {
+    if (item.type !== 'text' || typeof item.text !== 'string') return true;
+    const text = item.text.trim();
+    if (!text) return true;
+
+    if (isProofingNoteText(text)) {
+      extractedProofingTexts.push(text.replace(/^底部印刷校对提示[:：]?/g, '').trim());
+      return false;
+    }
+
+    if (isColorLegendText(text)) {
+      extractedLegends.push(...extractColorLegend(text));
+      return false;
+    }
+
+    return true;
+  });
+
+  const draftProofing = typeof draft.bottomMeta?.proofingNote === 'string' ? draft.bottomMeta.proofingNote : undefined;
+  const draftLegend = Array.isArray(draft.bottomMeta?.colorLegend)
+    ? draft.bottomMeta?.colorLegend
+        .filter((item) => item && typeof item.label === 'string' && typeof item.value === 'string')
+        .map((item) => ({
+          label: item.label,
+          value: item.value,
+          swatchColor: typeof item.swatchColor === 'string' ? item.swatchColor : undefined,
+        }))
+    : undefined;
+
+  const mergedProofing = draftProofing || extractedProofingTexts.join(' ');
+  const promptLegend = originalPrompt ? extractColorLegendFromPrompt(originalPrompt) : [];
+  const mergedLegend = promptLegend.length > 0
+    ? promptLegend
+    : draftLegend && draftLegend.length > 0
+      ? draftLegend
+      : extractedLegends.length > 0
+      ? extractedLegends
+      : (promptLegend.length > 0 ? promptLegend : undefined);
+
   return {
     projectName: draft.projectName || fallback.projectName,
     canvas: {
@@ -218,7 +322,13 @@ export const normalizeDraft = (draft: Partial<ConversationDesignDraft>): Convers
       safeAreaHeight: Number(draft.canvas?.safeAreaHeight) || fallback.canvas.safeAreaHeight,
       unit: 'cm',
     },
-    elements: Array.isArray(draft.elements) ? draft.elements.filter((item) => ['text', 'rect', 'image'].includes(item.type)) : [],
+    elements: normalizedElements,
+    bottomMeta: mergedProofing || mergedLegend
+      ? {
+          proofingNote: mergedProofing,
+          colorLegend: mergedLegend,
+        }
+      : fallback.bottomMeta,
     missingFields: Array.isArray(draft.missingFields) ? draft.missingFields : [],
     readyToGenerate: Boolean(draft.readyToGenerate),
   };

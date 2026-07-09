@@ -15,6 +15,7 @@ interface PresetPromptRow {
   prompt: string;
   thumbnail_url: string;
   sort_order: number;
+  enabled: number;
   created_at: string;
   updated_at: string;
 }
@@ -28,6 +29,7 @@ const ensureTable = (db: Database.Database) => {
       prompt TEXT NOT NULL,
       thumbnail_url TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -37,14 +39,20 @@ const ensureTable = (db: Database.Database) => {
   if (!cols.includes('thumbnail_url')) {
     db.exec('ALTER TABLE preset_prompts ADD COLUMN thumbnail_url TEXT NOT NULL DEFAULT ""');
   }
+  if (!cols.includes('enabled')) {
+    db.exec('ALTER TABLE preset_prompts ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1');
+  }
 };
 
-// GET /api/preset-prompts — 获取所有示例模板
+// GET /api/preset-prompts — 获取示例模板，可选只返回启用项
 router.get('/', (req, res) => {
   try {
     const db = getDb();
     ensureTable(db);
-    const rows = db.prepare('SELECT * FROM preset_prompts ORDER BY sort_order ASC, created_at ASC').all() as PresetPromptRow[];
+    const enabledOnly = String(req.query.enabledOnly || '').trim() === 'true';
+    const rows = enabledOnly
+      ? db.prepare('SELECT * FROM preset_prompts WHERE enabled = 1 ORDER BY sort_order ASC, created_at ASC').all() as PresetPromptRow[]
+      : db.prepare('SELECT * FROM preset_prompts ORDER BY sort_order ASC, created_at ASC').all() as PresetPromptRow[];
     db.close();
     res.json({
       success: true,
@@ -54,6 +62,7 @@ router.get('/', (req, res) => {
         prompt: row.prompt,
         thumbnailUrl: row.thumbnail_url,
         sortOrder: row.sort_order,
+        enabled: row.enabled === 1,
       })),
     });
   } catch (error) {
@@ -62,10 +71,40 @@ router.get('/', (req, res) => {
   }
 });
 
+// GET /api/preset-prompts/:id — 获取单个示例模板详情
+router.get('/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = getDb();
+    ensureTable(db);
+    const row = db.prepare('SELECT * FROM preset_prompts WHERE id = ? LIMIT 1').get(id) as PresetPromptRow | undefined;
+    db.close();
+
+    if (!row) {
+      return res.status(404).json({ success: false, error: 'Preset prompt not found' });
+    }
+
+    res.json({
+      success: true,
+      preset: {
+        id: row.id,
+        title: row.title,
+        prompt: row.prompt,
+        thumbnailUrl: row.thumbnail_url,
+        sortOrder: row.sort_order,
+        enabled: row.enabled === 1,
+      },
+    });
+  } catch (error) {
+    console.error('Failed to get preset prompt detail:', error);
+    res.status(500).json({ success: false, error: 'Failed to get preset prompt detail' });
+  }
+});
+
 // POST /api/preset-prompts — 新增或更新
 router.post('/', (req, res) => {
   try {
-    const { id, title, prompt, thumbnailUrl, sortOrder } = req.body;
+    const { id, title, prompt, thumbnailUrl, sortOrder, enabled } = req.body;
     if (!title?.trim() || !prompt?.trim()) {
       return res.status(400).json({ success: false, error: 'title and prompt are required' });
     }
@@ -75,16 +114,16 @@ router.post('/', (req, res) => {
     if (id) {
       const existing = db.prepare('SELECT id FROM preset_prompts WHERE id = ?').get(id);
       if (existing) {
-        db.prepare('UPDATE preset_prompts SET title=?, prompt=?, thumbnail_url=?, sort_order=?, updated_at=? WHERE id=?')
-          .run(title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, id);
+        db.prepare('UPDATE preset_prompts SET title=?, prompt=?, thumbnail_url=?, sort_order=?, enabled=?, updated_at=? WHERE id=?')
+          .run(title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, enabled === false ? 0 : 1, now, id);
       } else {
-        db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-          .run(id, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, now);
+        db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+          .run(id, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, enabled === false ? 0 : 1, now, now);
       }
     } else {
       const newId = `preset_${Date.now()}`;
-      db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, created_at, updated_at) VALUES (?,?,?,?,?,?,?)')
-        .run(newId, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, now, now);
+      db.prepare('INSERT INTO preset_prompts (id, title, prompt, thumbnail_url, sort_order, enabled, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+        .run(newId, title.trim(), prompt.trim(), thumbnailUrl?.trim() || '', sortOrder ?? 0, enabled === false ? 0 : 1, now, now);
     }
     db.close();
     res.json({ success: true });

@@ -124,11 +124,16 @@ export const api = {
     },
   },
   presetPrompts: {
-    list: async (): Promise<{ success: boolean; presets: Array<{ id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number }>; error?: string }> => {
-      const response = await fetch(`${BASE_URL}/preset-prompts`);
+    list: async (options?: { enabledOnly?: boolean }): Promise<{ success: boolean; presets: Array<{ id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number; enabled: boolean }>; error?: string }> => {
+      const query = options?.enabledOnly ? '?enabledOnly=true' : '';
+      const response = await fetch(`${BASE_URL}/preset-prompts${query}`);
       return response.json();
     },
-    save: async (data: { id?: string; title: string; prompt: string; thumbnailUrl?: string; sortOrder?: number }): Promise<{ success: boolean; error?: string }> => {
+    get: async (id: string): Promise<{ success: boolean; preset?: { id: string; title: string; prompt: string; thumbnailUrl: string; sortOrder: number; enabled: boolean }; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/preset-prompts/${id}`);
+      return response.json();
+    },
+    save: async (data: { id?: string; title: string; prompt: string; thumbnailUrl?: string; sortOrder?: number; enabled?: boolean }): Promise<{ success: boolean; error?: string }> => {
       const response = await fetch(`${BASE_URL}/preset-prompts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

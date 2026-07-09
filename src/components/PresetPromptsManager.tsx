@@ -8,6 +8,7 @@ type Preset = {
   prompt: string;
   thumbnailUrl: string;
   sortOrder: number;
+  enabled: boolean;
 };
 
 type EditingPreset = Omit<Preset, 'sortOrder'> & { sortOrder: number; isNew?: boolean };
@@ -18,6 +19,7 @@ const emptyPreset = (): EditingPreset => ({
   prompt: '',
   thumbnailUrl: '',
   sortOrder: 99,
+  enabled: true,
   isNew: true,
 });
 
@@ -73,6 +75,7 @@ export default function PresetPromptsManager() {
         prompt: editing.prompt,
         thumbnailUrl: editing.thumbnailUrl,
         sortOrder: editing.sortOrder,
+        enabled: editing.enabled,
       });
       setToast({ type: 'success', text: editing.isNew ? '模板已新增' : '模板已保存' });
       setEditing(null);
@@ -149,6 +152,9 @@ export default function PresetPromptsManager() {
                     <div className="font-semibold text-slate-800">{preset.title}</div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
+                    <span className={`inline-flex items-center px-2 py-1 text-xs font-semibold ${preset.enabled ? 'bg-emerald-50 text-emerald-600' : 'bg-slate-100 text-slate-500'}`}>
+                      {preset.enabled ? '可用' : '禁用'}
+                    </span>
                     <button
                       type="button"
                       onClick={() => startEdit(preset)}
@@ -264,6 +270,19 @@ export default function PresetPromptsManager() {
                   onChange={(e) => setEditing((cur) => cur && ({ ...cur, sortOrder: Number(e.target.value) || 0 }))}
                   className="w-32 border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500"
                 />
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-slate-700">状态</div>
+                <label className="inline-flex items-center gap-3 text-sm text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={editing.enabled}
+                    onChange={(e) => setEditing((cur) => cur && ({ ...cur, enabled: e.target.checked }))}
+                    className="h-4 w-4 border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  模板可用（关闭后首页“示例模板”中不展示）
+                </label>
               </div>
             </div>
 

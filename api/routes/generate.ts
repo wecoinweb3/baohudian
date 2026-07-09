@@ -46,6 +46,8 @@ router.post('/canvas', async (req, res) => {
       enhancedPrompt = `用户已上传图片素材：${imageNames}。${prompt}。如果用户需要在画布上添加图片logo或其他图片元素，请在设计方案中添加type为"image"的元素。`;
     }
 
+    enhancedPrompt = `${enhancedPrompt}\n\n重要规则：凡是“底部印刷校对提示 / 温馨提示 / 校对提示 / 色标说明 / 材料颜色 / 印刷颜色”相关内容，都不能放入 draft.elements，也不能放在画布内框中；必须放到 draft.bottomMeta 中。其中 proofingNote 放左侧底部外框区域，colorLegend 放右侧底部外框区域。若返回中仍把这些内容写进 elements，视为不符合要求。`;
+
     const response = await openai.chat.completions.create({
       model: aiSettings.canvasModel || process.env.OPENAI_MODEL || 'gpt-4o-mini',
       temperature: aiSettings.canvasTemperature,
