@@ -116,8 +116,27 @@ export interface AuthUser {
 export interface ConversationMessage {
   id: string;
   role: 'assistant' | 'user' | 'system';
+  kind?: 'text' | 'clarification' | 'prepared_prompt' | 'generation_progress' | 'generation_result' | 'error';
   content: string;
   imageUrl?: string;
+  suggestionChips?: string[];
+  exampleInput?: string;
+  draft?: unknown;
+  tweakMeta?: {
+    mode: 'local' | 'ai';
+    sourcePrompt: string;
+    appliedPatches?: unknown[];
+  };
+  progressSteps?: Array<{
+    id: string;
+    label: string;
+    status: 'pending' | 'active' | 'completed' | 'skipped' | 'error';
+    children?: Array<{
+      id: string;
+      label: string;
+      status: 'pending' | 'active' | 'completed' | 'skipped' | 'error';
+    }>;
+  }>;
 }
 
 export interface ConversationItem {

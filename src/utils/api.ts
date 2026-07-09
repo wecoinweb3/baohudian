@@ -70,8 +70,40 @@ export const api = {
       });
       return response.json();
     },
-    canvas: async (data: { prompt: string; messages?: Array<{ role: string; content: string }>; images?: Array<{ id: string; name: string; src: string }> }): Promise<{ success: boolean; draft?: ConversationDesignDraft; reply?: string; error?: string }> => {
+    canvas: async (data: { prompt: string; messages?: Array<{ role: string; content: string }>; images?: Array<{ id: string; name: string; src: string }>; referenceImages?: Array<{ id: string; name: string; src: string }> }): Promise<{ success: boolean; draft?: ConversationDesignDraft; reply?: string; error?: string }> => {
       const response = await fetch(`${BASE_URL}/generate/canvas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    normalizeLogo: async (data: { image: string; fileName: string; targetColor?: string }): Promise<{ success: boolean; imageUrl?: string; fileName?: string; info?: { targetColor: string; steps: string[] }; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/generate/logo-normalize`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    tweakLayout: async (data: { prompt: string; draft: ConversationDesignDraft }): Promise<{ success: boolean; patches?: Array<{ targetRole: string; action: string; dx?: number; dy?: number; dw?: number; dh?: number; color?: string; backgroundColor?: string; fontSize?: number; fontWeight?: string; textAlign?: 'left' | 'center' | 'right'; letterSpacing?: number }>; reply?: string; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/generate/tweak-layout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    clarifyReferenceIntent: async (data: { prompt: string; messages?: Array<{ role: string; content: string }>; referenceImages: Array<{ id: string; name: string; src: string }> }): Promise<{ success: boolean; question?: string; suggestions?: string[]; exampleInput?: string; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/generate/clarify-reference-intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      return response.json();
+    },
+    prepareFromReference: async (data: { prompt: string; messages?: Array<{ role: string; content: string }>; referenceImages: Array<{ id: string; name: string; src: string }> }): Promise<{ success: boolean; summary?: string; preparedPrompt?: string; extractedTexts?: string[]; error?: string }> => {
+      const response = await fetch(`${BASE_URL}/generate/prepare-from-reference`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),

@@ -1,28 +1,16 @@
 import { useEffect, useState } from 'react';
-import { ChevronsLeft, ChevronsRight, LogOut, Plus, Settings } from 'lucide-react';
-import { Link, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { ChevronsLeft, ChevronsRight, Plus } from 'lucide-react';
+import { Link, Navigate, Route, Routes } from 'react-router-dom';
 import ChatSetupPage from './pages/ChatSetupPage';
+import V2Workbench from './pages/V2Workbench';
 import Admin from './pages/Admin';
-import LoginPage from './pages/LoginPage';
-import { api } from './utils/api';
-import type { AuthUser } from './types';
 
-function DesignerLayout({ children, currentUser, onLogout }: { children: React.ReactNode; currentUser: AuthUser; onLogout: () => void }) {
+function DesignerLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="h-screen flex flex-col bg-gray-100">
       <header className="bg-white border-b border-gray-200 px-4 py-3 sm:px-6 sm:py-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Link to="/" className="text-lg font-bold text-gray-800 transition hover:text-blue-600 sm:text-xl">保护垫在线设计器</Link>
-
-          <div className="flex w-full items-center justify-end gap-3 sm:w-auto">
-            <div className="hidden text-right sm:block">
-              <div className="text-sm font-semibold text-slate-800">{currentUser.displayName}</div>
-              <div className="text-xs text-slate-500">{currentUser.role === 'admin' ? '管理员' : '普通用户'}</div>
-            </div>
-            <button type="button" onClick={onLogout} className="inline-flex items-center gap-2 border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
-              <LogOut className="h-4 w-4" />退出登录
-            </button>
-          </div>
+          <Link to="/" className="text-lg font-bold text-gray-800 transition hover:text-blue-600 sm:text-xl">保护垫设计智能体</Link>
         </div>
       </header>
 
@@ -31,7 +19,7 @@ function DesignerLayout({ children, currentUser, onLogout }: { children: React.R
   );
 }
 
-function ChatEntryLayout({ currentUser, onLogout }: { currentUser: AuthUser; onLogout: () => void }) {
+function ChatEntryLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [newChatSignal, setNewChatSignal] = useState(0);
 
@@ -72,11 +60,6 @@ function ChatEntryLayout({ currentUser, onLogout }: { currentUser: AuthUser; onL
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {currentUser.role === 'admin' && (
-              <NavLink to="/admin" className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
-                <Settings className="h-4 w-4" />管理端
-              </NavLink>
-            )}
             <button
               type="button"
               onClick={() => setNewChatSignal((value) => value + 1)}
@@ -84,9 +67,6 @@ function ChatEntryLayout({ currentUser, onLogout }: { currentUser: AuthUser; onL
             >
               <Plus className="h-4 w-4" />
               新建
-            </button>
-            <button type="button" onClick={onLogout} className="inline-flex h-11 items-center justify-center gap-2 border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900">
-              <LogOut className="h-4 w-4" />退出
             </button>
           </div>
         </div>
@@ -103,40 +83,13 @@ function ChatEntryLayout({ currentUser, onLogout }: { currentUser: AuthUser; onL
   );
 }
 
-function ProtectedRoute({ currentUser, allowRoles, children }: { currentUser: AuthUser | null; allowRoles: Array<'admin' | 'user'>; children: JSX.Element }) {
-  if (!currentUser) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!allowRoles.includes(currentUser.role)) {
-    return <Navigate to="/" replace />;
-  }
-
-  return children;
-}
-
 export default function App() {
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    const savedUser = localStorage.getItem('auth_user');
-    return savedUser ? JSON.parse(savedUser) as AuthUser : null;
-  });
-
-  const handleLogin = (user: AuthUser) => {
-    localStorage.setItem('auth_user', JSON.stringify(user));
-    setCurrentUser(user);
-  };
-
-  const handleLogout = async () => {
-    await api.auth.logout();
-    localStorage.removeItem('auth_user');
-    setCurrentUser(null);
-  };
-
   return (
     <Routes>
-      <Route path="/login" element={currentUser ? <Navigate to="/" replace /> : <LoginPage onLogin={handleLogin} />} />
-      <Route path="/" element={<ProtectedRoute currentUser={currentUser} allowRoles={['admin', 'user']}><ChatEntryLayout currentUser={currentUser as AuthUser} onLogout={handleLogout} /></ProtectedRoute>} />
-      <Route path="/admin" element={<ProtectedRoute currentUser={currentUser} allowRoles={['admin']}><DesignerLayout currentUser={currentUser as AuthUser} onLogout={handleLogout}><Admin /></DesignerLayout></ProtectedRoute>} />
+      <Route path="/login" element={<Navigate to="/" replace />} />
+      <Route path="/" element={<ChatEntryLayout />} />
+      <Route path="/v2" element={<DesignerLayout><V2Workbench /></DesignerLayout>} />
+      <Route path="/admin" element={<DesignerLayout><Admin /></DesignerLayout>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
