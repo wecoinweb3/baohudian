@@ -58,6 +58,10 @@ function getLatestAssistantDraft(messages: ChatMessage[]) {
   return null;
 }
 
+function draftHasLogo(draft: ConversationDesignDraft) {
+  return draft.elements.some((element) => element.type === 'image' && element.semanticRole === 'logo' && Boolean(element.src));
+}
+
 function isTweakIntent(input: string) {
   const normalized = input.trim();
   if (!normalized) return false;
@@ -148,10 +152,13 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   const [isGenerating, setIsGenerating] = useState(false);
   const [historyItems, setHistoryItems] = useState<ConversationItem[]>([]);
   const [pendingDeleteHistory, setPendingDeleteHistory] = useState<ConversationItem | null>(null);
+  const [isDeletingHistory, setIsDeletingHistory] = useState(false);
+  const [deleteHistoryError, setDeleteHistoryError] = useState('');
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
   const [previewScale, setPreviewScale] = useState(1);
   const [previewRotation, setPreviewRotation] = useState(0);
   const [composerHeight, setComposerHeight] = useState(188);
+  const [desktopComposerHeight, setDesktopComposerHeight] = useState(300);
   const [headerHeight, setHeaderHeight] = useState(76);
   const [presetPrompts, setPresetPrompts] = useState<PresetPrompt[]>([]);
   const [showPresets, setShowPresets] = useState(false);
@@ -848,6 +855,34 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
     void handleSubmit();
   };
 
+  const handleComposerResizeStart = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+
+    const startY = event.clientY;
+    const startHeight = desktopComposerHeight;
+    const minHeight = 180;
+    const maxHeight = Math.max(260, window.innerHeight - headerHeight - 220);
+
+    document.body.style.cursor = 'row-resize';
+    document.body.style.userSelect = 'none';
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const deltaY = moveEvent.clientY - startY;
+      const nextHeight = Math.min(maxHeight, Math.max(minHeight, startHeight - deltaY));
+      setDesktopComposerHeight(nextHeight);
+    };
+
+    const handleMouseUp = () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
   const buildConversationTitle = (content: string) => {
     const normalized = content.trim().replace(/\s+/g, ' ');
     return normalized.slice(0, 18) || '未命名对话';
@@ -908,15 +943,32 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
   };
 
   const handleDeleteConversation = async () => {
-    if (!pendingDeleteHistory) return;
-    await api.conversations.delete(pendingDeleteHistory.id);
-    const isDeletingActiveConversation = pendingDeleteHistory.id === activeConversationId;
-    setPendingDeleteHistory(null);
-    if (isDeletingActiveConversation) {
-      setActiveConversationId(null);
-      setMessages(initialMessages);
+    if (!pendingDeleteHistory || isDeletingHistory) return;
+    const deletingId = pendingDeleteHistory.id;
+    const isDeletingActiveConversation = deletingId === activeConversationId;
+
+    setIsDeletingHistory(true);
+    setDeleteHistoryError('');
+    try {
+      const result = await api.conversations.delete(deletingId);
+      if (!result.success) {
+        throw new Error(result.error || '删除历史对话失败');
+      }
+
+      setHistoryItems((prev) => prev.filter((item) => item.id !== deletingId));
+      setPendingDeleteHistory(null);
+
+      if (isDeletingActiveConversation) {
+        setActiveConversationId(null);
+        setMessages(initialMessages);
+      }
+
+      await loadConversationHistory(isDeletingActiveConversation ? null : activeConversationId);
+    } catch (error) {
+      setDeleteHistoryError((error as Error).message || '删除历史对话失败，请稍后重试。');
+    } finally {
+      setIsDeletingHistory(false);
     }
-    await loadConversationHistory(isDeletingActiveConversation ? null : activeConversationId);
   };
 
   const handleDownloadImage = (imageUrl: string, filename: string) => {
@@ -1011,7 +1063,10 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     </button>
                     <button
                       type="button"
-                      onClick={() => setPendingDeleteHistory(item)}
+                      onClick={() => {
+                        setDeleteHistoryError('');
+                        setPendingDeleteHistory(item);
+                      }}
                       className="mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center text-slate-400 transition hover:bg-white hover:text-red-500"
                       aria-label={`删除${item.title}`}
                       title="删除历史记录"
@@ -1155,7 +1210,11 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                           </button>
                           {message.role === 'assistant' && message.draft && (
                             <div className="mt-3 flex flex-wrap gap-2">
-                              {['Logo往右一点', '标题变大一点', '副标题往下移一点', '更接近示例图'].map((command) => (
+                              {[
+                                ...(draftHasLogo(message.draft) ? ['Logo往右一点'] : []),
+                                '标题变大一点',
+                                '副标题往下移一点',
+                              ].map((command) => (
                                 <button
                                   key={`${message.id}_${command}`}
                                   type="button"
@@ -1169,15 +1228,6 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                                   </span>
                                 </button>
                               ))}
-                              {message.tweakMeta?.previousDraft && (
-                                <button
-                                  type="button"
-                                  onClick={() => void handleUndoLastTweak()}
-                                  className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs text-amber-700 transition hover:bg-amber-100"
-                                >
-                                  撤销上一步
-                                </button>
-                              )}
                             </div>
                           )}
                         </div>
@@ -1190,7 +1240,22 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
             </div>
           </div>
 
-          <div ref={composerRef} className="fixed bottom-0 left-3 right-3 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg md:static md:left-auto md:right-auto md:z-auto md:mx-0 md:shrink-0 md:p-4 md:pb-4">
+          <div
+            className="hidden h-3 shrink-0 cursor-row-resize items-center justify-center md:flex"
+            onMouseDown={handleComposerResizeStart}
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="拖拽调整消息区和输入区高度"
+            title="上下拖拽调整消息区和输入区高度"
+          >
+            <div className="h-px w-full bg-slate-200 transition-colors hover:bg-blue-300" />
+          </div>
+
+          <div
+            ref={composerRef}
+            className="fixed bottom-0 left-3 right-3 z-40 border border-slate-200 bg-white p-2 pb-[max(env(safe-area-inset-bottom),8px)] shadow-lg md:relative md:left-auto md:right-auto md:z-30 md:mx-0 md:flex md:h-[var(--composer-panel-height)] md:shrink-0 md:flex-col md:overflow-visible md:p-4 md:pb-4"
+            style={{ '--composer-panel-height': `${desktopComposerHeight}px` } as React.CSSProperties}
+          >
             <div className="mb-2 flex items-start justify-between gap-2 sm:mb-3 sm:gap-4">
               <div className="min-w-0 flex-1 space-y-2">
                 <div className="flex flex-nowrap items-center gap-2 sm:flex-wrap sm:gap-4">
@@ -1308,12 +1373,25 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     <div className="border-b border-slate-100 px-3 py-2 text-xs font-semibold text-slate-500">选择模板（点击图片可放大）</div>
                     <div className="max-h-[70vh] overflow-y-auto">
                       {presetPrompts.map((preset) => (
-                        <div key={preset.id} className="flex gap-3 border-b border-slate-50 p-3 last:border-0 hover:bg-slate-50">
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => void handleUsePreset(preset.id)}
+                          className="flex w-full gap-3 border-b border-slate-50 p-3 text-left transition last:border-0 hover:bg-slate-50"
+                        >
                           {/* 缩略图 */}
                           {preset.thumbnailUrl ? (
-                            <button
-                              type="button"
+                            <span
+                              role="button"
+                              tabIndex={0}
                               onClick={(e) => { e.stopPropagation(); setZoomPresetImage(preset.thumbnailUrl); }}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setZoomPresetImage(preset.thumbnailUrl);
+                                }
+                              }}
                               className="relative h-16 w-24 shrink-0 overflow-hidden border border-slate-200 bg-slate-100"
                               title="点击放大查看"
                             >
@@ -1325,24 +1403,17 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                               <div className="absolute inset-0 flex items-center justify-center bg-black/0 transition hover:bg-black/20">
                                 <svg className="h-4 w-4 text-white opacity-0 drop-shadow transition group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
                               </div>
-                            </button>
+                            </span>
                           ) : (
                             <div className="h-16 w-24 shrink-0 bg-slate-100 border border-slate-200" />
                           )}
-                          {/* 文字 + 使用按钮 */}
-                          <div className="flex min-w-0 flex-1 flex-col justify-between">
+                          {/* 文字 */}
+                          <div className="flex min-w-0 flex-1 flex-col justify-center">
                             <div>
                               <div className="text-xs font-semibold text-slate-800">{preset.title}</div>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => void handleUsePreset(preset.id)}
-                              className="mt-1 self-start border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600 transition hover:bg-blue-600 hover:text-white"
-                            >
-                              使用此模板
-                            </button>
                           </div>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -1364,36 +1435,41 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 </button>
 
                 <div className={`${quickAdjustOpen ? 'block' : 'hidden'} space-y-2 sm:block`}>
-                <div className="hidden items-center justify-between gap-2 sm:flex">
-                  <div>
-                    <div className="text-xs font-semibold text-slate-800">快速微调</div>
-                    <div className="mt-0.5 text-[11px] text-slate-500">先用选项改高频参数；复杂调整仍可直接输入文字。</div>
-                  </div>
-                </div>
+                
 
                 <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-                  <label className="flex flex-col gap-1 text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">背景色</span>
+                  <label className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-16 shrink-0 whitespace-nowrap font-medium text-slate-700">背景色</span>
                     <select
                       defaultValue=""
                       onChange={(event) => void handleQuickAdjustSelect(event)}
                       disabled={isGenerating}
-                      className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      className="h-8 min-w-0 flex-1 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
                       <option value="">请选择</option>
                       <option value="背景色改为白色">白色</option>
+                      <option value="背景色改为黄色">黄色</option>
+                      <option value="背景色改为米黄色">米黄色</option>
+                      <option value="背景色改为橙色">橙色</option>
+                      <option value="背景色改为浅绿色">浅绿色</option>
+                      <option value="背景色改为绿色">绿色</option>
+                      <option value="背景色改为天蓝色">天蓝色</option>
                       <option value="背景色改为蓝色">蓝色</option>
                       <option value="背景色改为红色">红色</option>
+                      <option value="背景色改为粉色">粉色</option>
+                      <option value="背景色改为紫色">紫色</option>
+                      <option value="背景色改为灰色">灰色</option>
+                      <option value="背景色改为黑色">黑色</option>
                     </select>
                   </label>
 
-                  <label className="flex flex-col gap-1 text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">标题调整</span>
+                  <label className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-16 shrink-0 whitespace-nowrap font-medium text-slate-700">标题调整</span>
                     <select
                       defaultValue=""
                       onChange={(event) => void handleQuickAdjustSelect(event)}
                       disabled={isGenerating}
-                      className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      className="h-8 min-w-0 flex-1 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
                       <option value="">请选择</option>
                       <option value="标题变大一点">标题变大一点</option>
@@ -1404,13 +1480,13 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     </select>
                   </label>
 
-                  <label className="flex flex-col gap-1 text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">Logo 位置</span>
+                  <label className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-16 shrink-0 whitespace-nowrap font-medium text-slate-700">Logo 位置</span>
                     <select
                       defaultValue=""
                       onChange={(event) => void handleQuickAdjustSelect(event)}
                       disabled={isGenerating}
-                      className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      className="h-8 min-w-0 flex-1 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
                       <option value="">请选择</option>
                       <option value="Logo往左一点">往左一点</option>
@@ -1421,13 +1497,13 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                     </select>
                   </label>
 
-                  <label className="flex flex-col gap-1 text-xs text-slate-600">
-                    <span className="font-medium text-slate-700">热线 / 副标题</span>
+                  <label className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="w-20 shrink-0 whitespace-nowrap font-medium text-slate-700">热线/副标题</span>
                     <select
                       defaultValue=""
                       onChange={(event) => void handleQuickAdjustSelect(event)}
                       disabled={isGenerating}
-                      className="h-9 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
+                      className="h-8 min-w-0 flex-1 border border-slate-200 bg-white px-2 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:bg-slate-100"
                     >
                       <option value="">请选择</option>
                       <option value="联系电话往上一点">联系电话往上一点</option>
@@ -1439,7 +1515,7 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {QUICK_TWEAK_COMMANDS.filter((command) => ['更接近示例图', '安全提示往下移一点', '热线条加长一点', '热线条缩短一点'].includes(command)).map((command) => (
+                  {QUICK_TWEAK_COMMANDS.filter((command) => ['安全提示往下移一点', '热线条加长一点', '热线条缩短一点'].includes(command)).map((command) => (
                     <button
                       key={command}
                       type="button"
@@ -1459,16 +1535,8 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
                 当前是“待确认提示词”阶段：我已经根据参考图整理好一版可编辑文案。你可以先修改输入框内容，确认后再点击发送，系统才会正式生图。
               </div>
             )}
-            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。也可以说：在上一版基础上，logo往右一点。" className="h-20 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-40 sm:leading-7" />
+            <textarea value={input} onChange={(event) => setInput(event.target.value)} placeholder="描述你想要的保护垫设计，例如：宽度120cm，高度70cm，白底，安全区域 宽度84cm，高度40cm，红色标题、底部横条。也可以说：在上一版基础上，logo往右一点。" className="h-16 w-full resize-none bg-transparent px-2 py-1 text-sm leading-6 text-slate-800 outline-none placeholder:text-slate-400 sm:h-auto sm:min-h-28 sm:leading-7 md:min-h-0 md:flex-1" />
             <div className="mt-2 flex border-t border-slate-200 pt-2 sm:mt-3 sm:pt-3 sm:justify-end">
-              <button
-                type="button"
-                onClick={() => void handleUndoLastTweak()}
-                className="mr-2 inline-flex items-center justify-center border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={!messages.some((message) => message.role === 'assistant' && message.tweakMeta?.previousDraft) || isGenerating}
-              >
-                撤销上一步
-              </button>
               <button type="button" onClick={handleSubmitClick} disabled={isGenerating} className="inline-flex w-full items-center justify-center gap-2 bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"><Send className="h-4 w-4" />{isGenerating ? '生成中...' : '发送'}</button>
             </div>
           </div>
@@ -1483,10 +1551,20 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               删除后，这条历史记录将从当前列表中移除，操作后无法恢复。<br />
               <span className="mt-2 inline-block font-medium text-slate-800">“{pendingDeleteHistory.title}”</span>
             </p>
+            {deleteHistoryError && (
+              <div className="mt-4 border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+                {deleteHistoryError}
+              </div>
+            )}
             <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
               <button
                 type="button"
-                onClick={() => setPendingDeleteHistory(null)}
+                onClick={() => {
+                  if (isDeletingHistory) return;
+                  setPendingDeleteHistory(null);
+                  setDeleteHistoryError('');
+                }}
+                disabled={isDeletingHistory}
                 className="border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
               >
                 先保留
@@ -1494,9 +1572,10 @@ export default function ChatSetupPage({ sidebarCollapsed, setSidebarCollapsed, n
               <button
                 type="button"
                 onClick={() => void handleDeleteConversation()}
-                className="bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700"
+                disabled={isDeletingHistory}
+                className="bg-red-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                确认删除
+                {isDeletingHistory ? '删除中...' : '确认删除'}
               </button>
             </div>
           </div>

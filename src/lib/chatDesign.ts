@@ -636,8 +636,32 @@ const buildResizePatch = (targetRole: ElementSemanticRole, dw: number, dh: numbe
   dh,
 });
 
+const TWEAK_COLOR_MAP: Array<{ names: string[]; value: string }> = [
+  { names: ['白色', '白'], value: '#ffffff' },
+  { names: ['黄色', '黄'], value: '#fff200' },
+  { names: ['米黄色', '米黄'], value: '#fef3c7' },
+  { names: ['橙色', '橙'], value: '#f97316' },
+  { names: ['红色', '红'], value: '#ef0000' },
+  { names: ['粉色', '粉'], value: '#ec4899' },
+  { names: ['紫色', '紫'], value: '#7c3aed' },
+  { names: ['蓝色', '蓝'], value: '#2563eb' },
+  { names: ['天蓝色', '天蓝'], value: '#38bdf8' },
+  { names: ['绿色', '绿'], value: '#16a34a' },
+  { names: ['浅绿色', '浅绿'], value: '#86efac' },
+  { names: ['黑色', '黑'], value: '#111827' },
+  { names: ['灰色', '灰'], value: '#e5e7eb' },
+];
+
+const getNamedTweakColor = (normalized: string) => {
+  const matchedHex = normalized.match(/#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b/)?.[0];
+  if (matchedHex) return matchedHex;
+
+  return TWEAK_COLOR_MAP.find((item) => item.names.some((name) => normalized.includes(name)))?.value;
+};
+
 export const QUICK_TWEAK_COMMANDS = [
   '背景色改为蓝色',
+  '背景色改为黄色',
   '安全区域宽度改为80',
   'Logo往右一点',
   'Logo往左一点',
@@ -678,14 +702,11 @@ export const interpretLocalTweakCommand = (input: string): { patches: DraftAdjus
     patches.push({ targetRole: 'canvas', action: 'restyle', safeAreaHeight: Number(safeAreaHeightMatch[1]) });
   }
 
-  if (/(?:背景|背景色|底色).*(?:改成|改为|换成).*(?:蓝色|蓝)/.test(normalized)) {
-    patches.push({ targetRole: 'canvas', action: 'restyle', backgroundColor: '#2563eb' });
-  }
-  if (/(?:背景|背景色|底色).*(?:改成|改为|换成).*(?:白色|白)/.test(normalized)) {
-    patches.push({ targetRole: 'canvas', action: 'restyle', backgroundColor: '#ffffff' });
-  }
-  if (/(?:背景|背景色|底色).*(?:改成|改为|换成).*(?:红色|红)/.test(normalized)) {
-    patches.push({ targetRole: 'canvas', action: 'restyle', backgroundColor: '#ef0000' });
+  if (/(?:背景|背景色|底色).*(?:改成|改为|换成|调整为|变成)/.test(normalized)) {
+    const backgroundColor = getNamedTweakColor(normalized);
+    if (backgroundColor) {
+      patches.push({ targetRole: 'canvas', action: 'restyle', backgroundColor });
+    }
   }
 
   if (/logo.*往右/.test(normalized)) patches.push(buildMovePatch('logo', 0.03, 0));

@@ -301,6 +301,7 @@ router.post('/tweak-layout', async (req, res) => {
 只返回 JSON，不要 markdown，不要解释。
 
 ## targetRole 可选值
+- canvas
 - logo
 - title
 - subtitle
@@ -317,6 +318,7 @@ router.post('/tweak-layout', async (req, res) => {
 - restyle
 
 ## 规则
+- 如果用户要求修改整张画布背景色/底色，必须返回 targetRole 为 canvas 的 restyle 或 recolor patch，例如“背景色改为黄色”返回 backgroundColor: "#fff200"
 - dx/dy/dw/dh 为相对安全区域 0~1 的增量
 - “一点”通常使用 0.02~0.04
 - “更大一点”通常 dw=0.04~0.08, dh=0.02~0.04
